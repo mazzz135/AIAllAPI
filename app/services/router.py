@@ -497,6 +497,16 @@ class RouterService:
                 )
                 return
             except StopAsyncIteration:
+                # 上游 200 但一个 chunk 都没产出（空流 / 全是不可解析帧）。
+                # 旧实现只 continue，导致 last=None、日志退化成「全部账号失败」，
+                # 且失败账号不进 mark_failure，永不冷却、反复重试刷屏。
+                err = ProviderError(
+                    f"{provider_id} 上游返回空流（HTTP 200 但无可用 SSE 帧）",
+                    status_code=502,
+                    retryable=True,
+                )
+                last = err
+                self.pool.mark_failure(int(account["id"]), provider_id, model, 502, str(err))
                 continue
             except ProviderError as exc:
                 last = exc
@@ -511,11 +521,12 @@ class RouterService:
                     break
             finally:
                 self.pool.release(int(account["id"]))
+        error_text = str(last or "全部账号失败")
         self._log_custom(
             api_key, provider, accounts[0], model, virtual_model, endpoint, True, {}, started, ip, "error",
-            str(last or "全部账号失败"),
+            error_text,
         )
-        yield self._error_frame(str(last or "全部账号失败"), "provider_failed")
+        yield self._error_frame(error_text, "provider_failed")
 
     # ------------------------------------------------------------------ helpers
     @staticmethod

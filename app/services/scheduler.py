@@ -101,7 +101,8 @@ class Scheduler:
             if not self._retry_due("model_refresh", now):
                 return
         scheduled = self.db.get_setting("models_refresh_time", "10:10") or "10:10"
-        if now < self._scheduled_at(now, scheduled, "models"):
+        # force=True 是人工补跑，不应再受「每天 10:10」时间窗限制。
+        if not force and now < self._scheduled_at(now, scheduled, "models"):
             return
         self.db.set_setting("last_models_refresh", today)
         started_at = int(time.time())

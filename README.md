@@ -482,6 +482,16 @@ Token 来自上游 `token_usage` 事件；上游未返回时日志中为 0。
 - 只记录已通过管理员会话鉴权的请求；`api_key_fp` 为 SHA-256 前缀，不可反推原文
 - 每条记录独立开-写-关，外部 logrotate 后自动写新文件
 
+### 使用日志的 `error` 行
+
+- 虚拟模型组按成员顺序 failover，**每个失败成员各写一条 `status=error`**，因此一次最终成功的客户端请求也可能伴随多条 error 行；判断请求是否真正失败要看同一时间窗内是否有对应的 `ok`
+- 日志 `model` 列是真实上游模型 ID（如 `dfmodel`），`provider:` / `virtual:` 是平台与虚拟组名；管理台虚拟模型页的 `cn:` / `global:` 前缀只是 UI 展示，不是模型名
+- `days=0` 表示不加时间过滤，即显示全部历史
+- Qoder 网关会把业务错误包成 **HTTP 200 + `statusCodeValue>=400` 的 SSE 帧**（`code/type/message`，而非 OpenAI 的 `error` 字段），并附带 `event:error` 的 Java 异常帧；适配器会把这类帧解析成 `ProviderError`，在日志中保留 `HTTP <code>` 与上游原始 `message/details`，不会再退化成「全部账号失败」
+- Qoder 的 `[DONE]` 包在 wrapper 的 `body` 里，适配器会转换成标准 `data: [DONE]` 终止帧
+- 上游返回 200 但完全没有可用内容帧时，适配器抛 `ProviderError("...返回空流...")`，账号计入 `mark_failure` 并进入冷却，避免坏成员被无限重试刷屏
+- 排障脚本：`python scripts/diagnose_qoder_stream.py qoder-cn dfmodel --via-adapter`，或加 `--variants` / `--concurrency` / `--payload-chars` 复现上游行为；脚本只读、不写库、不输出任何账号凭据
+
 ---
 
 ## 安全

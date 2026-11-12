@@ -3565,3 +3565,214 @@ def test_virtual_alias_can_reuse_display_name(app_client):
     assert group is not None and group["members"][0]["model"] == "hy4std"
     with pytest.raises(ValueError):
         ctx.virtuals.create("HY4FREE")
+
+
+# ---------------------------------------------------------------------------
+# Qoder 包装帧：HTTP 200 + statusCodeValue>=400 的业务错误 / 包装 [DONE] / 空流
+# 对应生产日志 `error=全部账号失败`：上游真实错误被静默吞掉的场景。
+# ---------------------------------------------------------------------------
+
+
+def _qoder_wrapped(body_obj, status_code_value=200, status_code="OK"):
+    return json.dumps(
+        {
+            "headers": {"Content-Type": ["application/json"]},
+            "body": json.dumps(body_obj, ensure_ascii=False, separators=(",", ":")),
+            "statusCodeValue": status_code_value,
+            "statusCode": status_code,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _qoder_sse(lines):
+    return ("\n\n".join(lines) + "\n\n").encode()
+
+
+def _qoder_adapter(handler):
+    import httpx
+
+    from app.providers.qoder import QoderProvider
+
+    return QoderProvider(
+        Settings(data_dir=Path(tempfile.mkdtemp())),
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+
+def _qoder_ctx():
+    return (
+        {"id": "qoder-cn", "base_url": "https://gateway.qoder.com.cn", "region": "cn", "kind": "qoder", "config": {}},
+        {"id": 1, "name": "q", "credential": {"uid": "u1", "access_token": "dt-test"}},
+        {"model": "dfmodel", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+
+def test_qoder_wrapped_business_error_raises_in_stream():
+    """生产复现：200 + statusCodeValue 400 + code/type/message 错误帧不得被静默跳过。"""
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from app.providers.base import ProviderError
+
+    upstream_error = {
+        "code": "provider_error",
+        "message": "Error in upstream response",
+        "type": "provider_error",
+        "request_id": "1a86f7f90530",
+        "details": json.dumps(
+            {"error": {"message": "you must provide a messages parameter", "code": "missing_required_parameter"}}
+        ),
+    }
+    content = _qoder_sse(
+        [
+            "data: " + _qoder_wrapped(upstream_error, 400, "BAD_REQUEST"),
+            "event: error\ndata: " + json.dumps({"stackTrace": [], "message": "onFailure", "localizedMessage": "onFailure"}),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=content, headers={"content-type": "text/event-stream"})
+
+    provider, account, payload = _qoder_ctx()
+    adapter = _qoder_adapter(handler)
+
+    async def collect():
+        return [chunk.line async for chunk in adapter.chat_stream(provider, account, payload)]
+
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(collect())
+    assert "you must provide a messages parameter" in str(exc.value)
+    assert "HTTP 400" in str(exc.value)
+    assert exc.value.status_code == 400
+    assert exc.value.retryable is False
+
+
+def test_qoder_wrapped_business_error_raises_in_complete():
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from app.providers.base import ProviderError
+
+    upstream_error = {"code": "provider_error", "message": "quota exceeded", "type": "provider_error"}
+    content = _qoder_sse(["data: " + _qoder_wrapped(upstream_error, 429, "TOO_MANY_REQUESTS")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=content, headers={"content-type": "text/event-stream"})
+
+    provider, account, payload = _qoder_ctx()
+    adapter = _qoder_adapter(handler)
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(adapter.chat_complete(provider, account, payload))
+    assert "quota exceeded" in str(exc.value)
+    assert exc.value.retryable is True
+
+
+def test_qoder_wrapped_done_and_normal_stream():
+    """正常响应：包装 [DONE] 必须转成标准 SSE 终止帧，内容帧保持可用。"""
+    import asyncio
+
+    import httpx
+
+    chunk = {
+        "id": "chatcmpl-q1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "auto",
+        "choices": [{"index": 0, "delta": {"content": "OK"}, "finish_reason": "stop"}],
+    }
+    usage_frame = {"id": "chatcmpl-q1", "object": "chat.completion.chunk", "choices": [], "usage": {"total_tokens": 3}}
+    lines = [
+        "data: " + _qoder_wrapped(chunk),
+        "data: " + _qoder_wrapped(usage_frame),
+        "data: " + json.dumps({"headers": {}, "body": "[DONE]", "statusCodeValue": 200, "statusCode": "OK"}),
+        "event: finish\ndata: " + json.dumps({"firstTokenDuration": 1, "totalDuration": 2, "serverDuration": 1}),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_qoder_sse(lines), headers={"content-type": "text/event-stream"})
+
+    provider, account, payload = _qoder_ctx()
+    adapter = _qoder_adapter(handler)
+
+    async def collect():
+        return [c.line async for c in adapter.chat_stream(provider, account, payload)]
+
+    frames = asyncio.run(collect())
+    assert len(frames) == 2
+    assert "OK" in frames[0]
+    assert frames[1] == "data: [DONE]\n\n"
+
+
+def test_qoder_empty_stream_raises_instead_of_silent_finish():
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from app.providers.base import ProviderError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_qoder_sse(["event: finish\ndata: " + json.dumps({"firstTokenDuration": 1})]),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    provider, account, payload = _qoder_ctx()
+    adapter = _qoder_adapter(handler)
+
+    async def collect():
+        return [c.line async for c in adapter.chat_stream(provider, account, payload)]
+
+    with pytest.raises(ProviderError) as exc:
+        asyncio.run(collect())
+    assert "空流" in str(exc.value)
+    assert exc.value.status_code == 502
+    assert exc.value.retryable is True
+
+
+def test_router_stream_empty_upstream_logs_reason_not_placeholder(app_client, monkeypatch):
+    """任何 provider 的空流都不再退化成 `全部账号失败`，并且账号进入 mark_failure。"""
+    import asyncio
+
+    app, _ = app_client
+    ctx = app.state.ctx
+
+    ctx.providers.add_credential_account(
+        "qoder-cn",
+        "qoder-empty",
+        {"access_token": "tok", "refresh_token": "ref", "expires_at": 9999999999, "uid": "u-empty", "security_oauth_token": "tok"},
+        uid="u-empty",
+    )
+
+    class EmptyAdapter:
+        async def chat_stream(self, provider, account, body):
+            if False:  # pragma: no cover - 保持异步生成器语义
+                yield None
+
+        async def chat_complete(self, provider, account, body):
+            return {}
+
+    monkeypatch.setattr(ctx.providers, "adapter", lambda provider: EmptyAdapter())
+
+    api_key = {"id": 0, "name": "test"}
+    gen = ctx.router._stream_provider(
+        "qoder-cn", "dfmodel", {"messages": [{"role": "user", "content": "hi"}]},
+        api_key, "127.0.0.1", "/v1/chat/completions", virtual_model="deepseek-flash",
+    )
+    frames = asyncio.run(_collect_async(gen))
+    assert any('"error"' in f for f in frames)
+    row = ctx.db.query_one("SELECT status,error FROM usage_logs ORDER BY id DESC LIMIT 1")
+    assert row["status"] == "error"
+    assert row["error"] != "全部账号失败"
+    assert "空流" in row["error"]
+
+
+async def _collect_async(gen):
+    return [chunk async for chunk in gen]

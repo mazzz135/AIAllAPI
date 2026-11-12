@@ -223,6 +223,53 @@ def _unwrap(frame: dict[str, Any]) -> dict[str, Any]:
     return body if isinstance(body, dict) else {}
 
 
+def _wrapped_business_error(frame: dict[str, Any], inner: dict[str, Any]) -> Optional[ProviderError]:
+    """识别 Qoder 网关「HTTP 200 + SSE 包装帧里的业务错误」。
+
+    实测上游错误响应形如::
+
+        data:{"headers":{...},"body":"{\\"code\\":\\"provider_error\\",
+              \\"message\\":\\"Error in upstream response\\",\\"type\\":\\"provider_error\\",
+              \\"details\\":\\"...\\"}","statusCodeValue":400,"statusCode":"BAD_REQUEST"}
+        event:error
+        data:{"stackTrace":[...],"message":"...","localizedMessage":"..."}
+
+    这些帧既没有 OpenAI 的 ``error`` 字段，也没有 ``choices``；旧实现会把它们
+    全部 ``continue`` 掉，导致 ``chat_stream()`` 一个 chunk 都不产出，
+    router 只看到 ``StopAsyncIteration``，日志退化成「全部账号失败」。
+    """
+    status = 0
+    try:
+        status = int(frame.get("statusCodeValue") or 0)
+    except (TypeError, ValueError):
+        status = 0
+    code = str(inner.get("code") or "")
+    type_name = str(inner.get("type") or "")
+    looks_like_error = (
+        status >= 400
+        or bool(frame.get("stackTrace") or frame.get("localizedMessage"))
+        or "error" in code.lower()
+        or "error" in type_name.lower()
+    )
+    if not looks_like_error:
+        return None
+    message = str(inner.get("message") or inner.get("msg") or frame.get("message") or "")
+    details = inner.get("details") or frame.get("details")
+    text = message or code or type_name or "Qoder 上游返回业务错误"
+    if details:
+        text = f"{text}: {str(details)[:300]}"
+    if status:
+        text = f"Qoder 上游业务错误 HTTP {status}: {text}"
+    else:
+        text = f"Qoder 上游业务错误: {text}"
+    retryable = status in (408, 409, 425, 429, 430) or status >= 500
+    return ProviderError(
+        text[:500],
+        status_code=status or 502,
+        retryable=retryable,
+    )
+
+
 def _num(value: Any) -> Optional[float]:
     try:
         return float(value)
@@ -529,6 +576,7 @@ class QoderProvider:
         usage = empty_usage()
         finish = "stop"
         model = str(payload.get("model") or "")
+        produced = False
         for line in resp.text.splitlines():
             if not line.startswith("data:"):
                 continue
@@ -536,9 +584,16 @@ class QoderProvider:
             if not raw or raw == "[DONE]":
                 continue
             try:
-                body = _unwrap(json.loads(raw))
+                frame = json.loads(raw)
             except Exception:
                 continue
+            wrapped_body = frame.get("body") if isinstance(frame, dict) else None
+            if isinstance(wrapped_body, str) and wrapped_body.strip() == "[DONE]":
+                break
+            body = _unwrap(frame)
+            business_error = _wrapped_business_error(frame, body)
+            if business_error is not None:
+                raise business_error
             if body.get("error"):
                 err = body["error"]
                 msg = err.get("message") if isinstance(err, dict) else str(err)
@@ -546,6 +601,8 @@ class QoderProvider:
             merge_usage(usage, body.get("usage"))
             if body.get("model"):
                 model = str(body["model"])
+            if body.get("choices"):
+                produced = True
             for choice in body.get("choices") or []:
                 delta = choice.get("delta") or choice.get("message") or {}
                 if delta.get("content"):
@@ -564,6 +621,12 @@ class QoderProvider:
                         slot["arguments"] += str(fn["arguments"])
                 if choice.get("finish_reason"):
                     finish = str(choice["finish_reason"])
+        if not produced:
+            raise ProviderError(
+                "Qoder 上游返回空流：HTTP 200 但没有可用的 SSE 内容帧",
+                status_code=502,
+                retryable=True,
+            )
         message: dict[str, Any] = {"role": "assistant", "content": "".join(text)}
         if reasoning:
             message["reasoning_content"] = "".join(reasoning)
@@ -605,6 +668,7 @@ class QoderProvider:
                 retryable=resp.status_code in (401, 403, 408, 409, 425, 429, 430) or resp.status_code >= 500,
             )
         usage = empty_usage()
+        produced = False
         try:
             async for line in resp.aiter_lines():
                 if not line:
@@ -619,7 +683,15 @@ class QoderProvider:
                     frame = json.loads(raw)
                 except Exception:
                     continue
+                # Qoder 把 [DONE] 包在 wrapper 的 body 里，而不是裸 data: [DONE]。
+                wrapped_body = frame.get("body") if isinstance(frame, dict) else None
+                if isinstance(wrapped_body, str) and wrapped_body.strip() == "[DONE]":
+                    yield StreamChunk("data: [DONE]\n\n", usage)
+                    return
                 inner = _unwrap(frame)
+                business_error = _wrapped_business_error(frame, inner)
+                if business_error is not None:
+                    raise business_error
                 if inner.get("error"):
                     err = inner["error"]
                     msg = err.get("message") if isinstance(err, dict) else str(err)
@@ -633,12 +705,21 @@ class QoderProvider:
                 merge_usage(usage, inner.get("usage"))
                 if not inner.get("choices"):
                     continue
+                produced = True
                 yield StreamChunk(
                     "data: " + json.dumps(inner, ensure_ascii=False) + "\n\n",
                     usage,
                 )
         finally:
             await resp.aclose()
+        # 200 但没有产出任何内容帧（且没有 [DONE]）时不能再静默结束，
+        # 否则 router 的 StopAsyncIteration 分支会吞掉原因并写成「全部账号失败」。
+        if not produced:
+            raise ProviderError(
+                "Qoder 上游返回空流：HTTP 200 但没有可用的 SSE 内容帧",
+                status_code=502,
+                retryable=True,
+            )
 
     # ------------------------------------------------------------------ checkin
     @staticmethod
