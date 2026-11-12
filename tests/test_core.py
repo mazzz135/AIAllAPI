@@ -3776,3 +3776,29 @@ def test_router_stream_empty_upstream_logs_reason_not_placeholder(app_client, mo
 
 async def _collect_async(gen):
     return [chunk async for chunk in gen]
+
+
+def test_qoder_openai_shaped_error_frame_stays_error_frame():
+    """带 type:*_error 的标准 OpenAI 错误帧不应被误判成包装业务错误。"""
+    import asyncio
+
+    import httpx
+
+    error_frame = {"error": {"message": "rate limited", "type": "rate_limit_error"}}
+    lines = [
+        "data: " + _qoder_wrapped(error_frame),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_qoder_sse(lines), headers={"content-type": "text/event-stream"})
+
+    provider, account, payload = _qoder_ctx()
+    adapter = _qoder_adapter(handler)
+
+    async def collect():
+        return [c.line async for c in adapter.chat_stream(provider, account, payload)]
+
+    frames = asyncio.run(collect())
+    assert len(frames) == 1
+    assert "rate limited" in frames[0]
+    assert "api_error" in frames[0]

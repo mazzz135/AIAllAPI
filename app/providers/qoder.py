@@ -245,15 +245,24 @@ def _wrapped_business_error(frame: dict[str, Any], inner: dict[str, Any]) -> Opt
         status = 0
     code = str(inner.get("code") or "")
     type_name = str(inner.get("type") or "")
+    # 标准 OpenAI 错误帧由 chat_stream/chat_complete 自己的 inner["error"] 分支处理，
+    # 不要因为它的 type 里带 "error" 就抢先转成 ProviderError。
+    has_openai_error = bool(inner.get("error"))
     looks_like_error = (
         status >= 400
         or bool(frame.get("stackTrace") or frame.get("localizedMessage"))
-        or "error" in code.lower()
-        or "error" in type_name.lower()
+        or (not has_openai_error and ("error" in code.lower() or "error" in type_name.lower()))
     )
     if not looks_like_error:
         return None
-    message = str(inner.get("message") or inner.get("msg") or frame.get("message") or "")
+    error_obj = inner.get("error")
+    if isinstance(error_obj, dict):
+        error_message = str(error_obj.get("message") or "")
+    elif error_obj:
+        error_message = str(error_obj)
+    else:
+        error_message = ""
+    message = str(inner.get("message") or inner.get("msg") or frame.get("message") or "") or error_message
     details = inner.get("details") or frame.get("details")
     text = message or code or type_name or "Qoder 上游返回业务错误"
     if details:
