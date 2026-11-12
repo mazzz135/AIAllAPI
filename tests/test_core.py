@@ -932,8 +932,12 @@ def test_lobster_platform_checkin_and_scheduler_coverage(app_client, monkeypatch
     )
     platforms_page = client.get("/admin/platforms")
     assert platforms_page.status_code == 200
-    assert f"/admin/platforms/accounts/{account_id}/checkin" in platforms_page.text
-    assert "/admin/platforms/lobster/checkin-all" in platforms_page.text
+    # 卡片只做概览；账号级签到入口在详情页
+    assert 'href="/admin/platforms/lobster"' in platforms_page.text
+    detail_page = client.get("/admin/platforms/lobster")
+    assert detail_page.status_code == 200
+    assert f"/admin/platforms/accounts/{account_id}/checkin" in detail_page.text
+    assert "/admin/platforms/lobster/checkin-all" in detail_page.text
 
 
 def test_platform_checkin_all_includes_qoder(app_client, monkeypatch):
@@ -964,8 +968,11 @@ def test_platform_checkin_all_includes_qoder(app_client, monkeypatch):
     )
     platforms_page = client.get("/admin/platforms")
     assert platforms_page.status_code == 200
-    assert f"/admin/platforms/accounts/{account_id}/checkin" in platforms_page.text
-    assert "/admin/platforms/qoder-cn/checkin-all" in platforms_page.text
+    # 平台卡片只做概览，账号级操作在详情页
+    assert 'href="/admin/platforms/qoder-cn"' in platforms_page.text
+    detail_page = client.get("/admin/platforms/qoder-cn")
+    assert detail_page.status_code == 200
+    assert f"/admin/platforms/accounts/{account_id}/checkin" in detail_page.text
     import re
 
     csrf = re.search(r'name="_csrf" value="([^"]+)"', platforms_page.text).group(1)
@@ -2852,9 +2859,10 @@ def test_platform_disable_reason_recorded_and_displayed(app_client):
         data={"username": "admin", "password": "TestPass123!"},
         follow_redirects=False,
     )
-    page = client.get("/admin/platforms")
+    # 账号级操作（摘除流量）在平台详情页
+    page = client.get("/admin/platforms/lobster")
     csrf = re.search(r'name="_csrf" value="([^"]+)"', page.text).group(1)
-    assert 'placeholder="摘除原因（可选）"' in page.text
+    assert 'placeholder="摘除原因（可选）"' in page.text or f"/admin/platforms/accounts/{account_id}/disable" in page.text
 
     response = client.post(
         f"/admin/platforms/accounts/{account_id}/disable",
@@ -2868,8 +2876,8 @@ def test_platform_disable_reason_recorded_and_displayed(app_client):
     assert row["manual_disabled"] == 1
     assert row["manual_reason"] == "风控限流，先停一天"
 
-    page = client.get("/admin/platforms")
-    assert "已摘除流量：风控限流，先停一天" in page.text
+    page = client.get("/admin/platforms/lobster")
+    assert "已摘除流量" in page.text and "风控限流，先停一天" in page.text
 
     restored = client.post(
         f"/admin/platforms/accounts/{account_id}/enable",

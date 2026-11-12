@@ -31,6 +31,10 @@
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <button class="mini-btn" type="submit">同步模型</button>
       </form>
+      <form method="post" action="/admin/platforms/{{ provider.id }}/checkin-all" class="inline-form js-toast">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit">全部签到</button>
+      </form>
       {% endif %}
     </div>
   </div>
@@ -118,6 +122,7 @@
             <span class="badge success">正常</span>
             {% endif %}
             {% if a.in_flight %}<div class="muted small">在途 {{ a.in_flight }}</div>{% endif %}
+            {% if a.manual_disabled %}<div class="muted small" style="color:#ea580c">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>{% endif %}
             {% if a.last_error %}<div class="account-error">{{ a.last_error[:100] }}</div>{% endif %}
           </td>
           <td class="muted small" data-field="updated_at">{{ fmt_ts(a.credits_updated_at or a.last_used_at) }}</td>

@@ -122,6 +122,12 @@ a.pf-btn-add { color: #fff; }
   display: flex; align-items: center; justify-content: space-between;
   font-size: 11.5px; flex-shrink: 0; border-top: 1px solid #f1f3f6;
 }
+.pf-trae-login {
+  position: absolute; left: 18px; bottom: 42px;
+  font-size: 11px; color: #2563eb; text-decoration: none;
+  padding: 4px 8px; background: #eff6ff; border-radius: 5px;
+}
+.pf-trae-login:hover { background: #dbeafe; }
 .pf-region {
   padding: 3px 8px; border-radius: 5px;
   font-size: 10.5px; font-weight: 600; letter-spacing: .3px;
@@ -248,7 +254,9 @@ a.pf-btn-add { color: #fff; }
   }.get(p.id, '') %}
   {% set region = (p.region or '')|lower %}
   {% set st = p.stats or {} %}
-  {% set unit = 'USD' if (p.accounts and p.accounts[0].credit_unit == 'USD') else 'CREDITS' %}
+  {# Trae 账号存放在 trae_accounts，p.accounts 为空，需按 region 取 #}
+  {% set acct_rows = p.accounts if p.kind != 'trae' else trae_accounts.get(p.region or 'cn', []) %}
+  {% set unit = 'USD' if (acct_rows and acct_rows[0].credit_unit == 'USD') else 'CREDITS' %}
   {% set sym = '$' if unit == 'USD' else '¥' %}
 
   {% set archived = (p.id in ('trae-global', 'qoder-global')) or (not p.enabled) %}
@@ -359,6 +367,9 @@ a.pf-btn-add { color: #fff; }
       <span class="pf-sync">同步于 {{ fmt_ts(p.last_synced_at) }}</span>
     </div>
 
+    {% if p.kind == 'trae' %}
+    <a class="pf-trae-login" href="/admin/platforms/trae/login?region={{ p.region or 'cn' }}">{{ 'Cookie 登录国际版' if (p.region or 'cn') == 'global' else '添加 Trae 国内版账号' }}</a>
+    {% endif %}
   </div>
 {% endfor %}
 </div>
