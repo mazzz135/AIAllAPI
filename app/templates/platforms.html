@@ -12,13 +12,14 @@
 /* ============ 平台卡片（400 × 500） ============ */
 .pf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 400px);
-  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 20px;
   margin-bottom: 24px;
 }
 .pf-card {
   position: relative;
-  width: 400px;
+  width: 100%;
+  min-width: 0;
   height: 500px;
   background: #fff;
   border-radius: 14px;
@@ -61,8 +62,11 @@
 .pf-btn {
   padding: 5px 9px; border-radius: 7px; border: none; cursor: pointer;
   font-size: 11.5px; font-weight: 550; transition: .15s; white-space: nowrap;
-  font-family: inherit;
+  font-family: inherit; text-decoration: none; display: inline-flex;
+  align-items: center; line-height: 1.35;
 }
+a.pf-btn-manage { color: #4b5563; }
+a.pf-btn-add { color: #fff; }
 .pf-btn-manage { background: #f4f6f9; color: #4b5563; }
 .pf-btn-manage:hover { background: #e9edf3; }
 .pf-btn-manage.on { background: #111827; color: #fff; }
@@ -262,7 +266,7 @@
         <span class="pf-sub">{{ p.id }}{% if not p.enabled and not archived %} · 已停用{% endif %}</span>
       </div>
       <div class="pf-actions">
-        <button type="button" class="pf-btn pf-btn-manage" data-card="{{ p.id }}">管理</button>
+        <a href="/admin/platforms/{{ p.id }}" class="pf-btn pf-btn-manage" title="进入平台详细管理">管理</a>
         <button type="button" class="pf-btn pf-btn-add" data-open-add="{{ p.id }}">添加账号</button>
         <form method="post" action="/admin/platforms/{{ p.id }}/test" class="pf-inline js-test">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -270,7 +274,6 @@
         </form>
       </div>
     </div>
-
     <!-- body：四行分组 -->
     <div class="pf-body">
       <div class="pf-group status">
@@ -356,160 +359,6 @@
       <span class="pf-sync">同步于 {{ fmt_ts(p.last_synced_at) }}</span>
     </div>
 
-    <!-- 详情层：账号列表 + 导入 + 配置 -->
-    <div class="pf-detail" data-detail="{{ p.id }}">
-      {% if p.last_error %}
-      <div class="pf-alert">{{ p.last_error[:220] }}</div>
-      {% endif %}
-
-      {% set accts = p.accounts if p.kind != 'trae' else trae_accounts.get(p.region or 'cn', []) %}
-      <div class="pf-sec" id="sec-accts-{{ p.id }}">
-        <div class="pf-sec-title">账号列表 <span class="cnt">{{ accts|length }} 个</span></div>
-        {% if accts %}
-        <div class="pf-acct-list">
-          {% for a in accts %}
-          <div class="pf-acct">
-            <div class="pf-acct-main">
-              <div class="pf-acct-name">{{ a.name }}</div>
-              <div class="pf-acct-meta">
-                UID {{ (a.uid or '—')[:16] }} ·
-                {{ fmt_money(a.credits) if a.credit_unit == 'USD' else fmt_credits(a.credits) }} ·
-                {{ fmt_ts(a.last_checkin_at or a.last_used_at) }}
-              </div>
-              {% if a.manual_disabled %}
-              <div class="pf-acct-meta" style="color:#ea580c">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>
-              {% endif %}
-              {% if a.last_error %}
-              <div class="pf-acct-meta" style="color:#dc2626">{{ a.last_error[:80] }}</div>
-              {% endif %}
-            </div>
-            <span class="pf-pill {{ 'ok' if a.enabled and a.status == 'ready' else 'bad' }}">
-              {{ '正常' if a.enabled and a.status == 'ready' else ('停用' if not a.enabled else (a.status or '异常')) }}
-            </span>
-            <div class="pf-acct-ops">
-              {% if p.kind != 'trae' %}
-              <form method="post" action="/admin/platforms/accounts/{{ a.id }}/quota" class="pf-inline js-refresh">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn pf-btn-manage" type="submit">刷新</button>
-              </form>
-              <form method="post" action="/admin/platforms/accounts/{{ a.id }}/checkin" class="pf-inline js-toast">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn pf-btn-manage" type="submit">签到</button>
-              </form>
-              {% else %}
-              <form method="post" action="/admin/accounts/{{ a.id }}/refresh" class="pf-inline js-refresh">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn pf-btn-manage" type="submit">刷新</button>
-              </form>
-              <form method="post" action="/admin/accounts/{{ a.id }}/checkin" class="pf-inline js-toast">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn pf-btn-manage" type="submit">签到</button>
-              </form>
-              {% endif %}
-              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/toggle" class="pf-inline">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn pf-btn-manage" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
-              </form>
-              {% if a.manual_disabled %}
-              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/enable" class="pf-inline js-toast">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn pf-btn-manage" type="submit">恢复流量</button>
-              </form>
-              {% else %}
-              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/disable" class="pf-inline js-toast">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <input class="pf-mini-input" name="reason" placeholder="摘除原因（可选）" maxlength="200" title="仅用于记录为什么把这个账号移出对话轮换，不影响签到与保活">
-                <button class="pf-btn pf-btn-manage" type="submit">摘除流量</button>
-              </form>
-              {% endif %}
-              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/delete" class="pf-inline" data-confirm="确认删除账号 {{ a.name }}？">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="pf-btn" style="background:#fef2f2;color:#dc2626" type="submit">删除</button>
-              </form>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="pf-import"><span class="pf-import-tip">暂无账号，点击「添加账号」导入凭据</span></div>
-        {% endif %}
-      </div>
-
-      <div class="pf-sec" id="sec-add-{{ p.id }}" {% if not accts %}style="display:none"{% endif %}>
-        <div class="pf-sec-title">导入凭据 / PAT</div>
-        <form method="post" action="/admin/platforms/{{ p.id }}/accounts/manual" class="pf-stack">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="pf-field">
-            <label>账号名称</label>
-            <input name="name" placeholder="可选，留空自动">
-          </div>
-          <div class="pf-field">
-            <label>UID</label>
-            <input name="uid" placeholder="Qoder / WorkBuddy / CodeBuddy 必填">
-          </div>
-          <div class="pf-field" style="align-items:flex-start">
-            <label style="padding-top:6px">凭据</label>
-            <textarea name="credential" rows="4" required placeholder='{% if p.kind == "qoder" %}粘贴 Qoder CLI user JSON，或直接粘贴 PAT（需同时填写 UID）{% elif p.kind in ("workbuddy", "codebuddy") %}{"access_token":"...","refresh_token":"...","uid":"..."}{% else %}{"auth":{"accessToken":"...","refreshToken":"..."},"account":{"uid":"..."}}{% endif %}'></textarea>
-          </div>
-          <div style="text-align:right"><button class="pf-btn-import" type="submit">导入账号</button></div>
-        </form>
-      </div>
-
-      <div class="pf-sec">
-        <div class="pf-sec-title">平台地址与高级配置</div>
-        <form method="post" action="/admin/platforms/{{ p.id }}/config" class="pf-stack">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="pf-field">
-            <label>Base URL</label>
-            <input name="base_url" value="{{ p.base_url }}">
-          </div>
-          <div class="pf-field" style="align-items:flex-start">
-            <label style="padding-top:6px">配置</label>
-            <textarea name="config_json" rows="2">{{ p.config | tojson }}</textarea>
-          </div>
-          <div style="text-align:right"><button class="pf-btn pf-btn-manage" type="submit">保存配置</button></div>
-        </form>
-      </div>
-
-      {% if p.models %}
-      <div class="pf-sec">
-        <div class="pf-sec-title">模型 <span class="cnt">{{ p.models|length }} 个</span></div>
-        <div class="pf-models">
-          {% for m in p.models[:24] %}<span class="pf-model-tag" title="{{ m.id }}">{{ m.id }}</span>{% endfor %}
-          {% if p.models|length > 24 %}<span class="pf-import-tip">+{{ p.models|length - 24 }}</span>{% endif %}
-        </div>
-      </div>
-      {% endif %}
-
-      {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
-      <div class="pf-sec">
-        <div style="display:flex;gap:8px">
-          <form method="post" action="/admin/platforms/{{ p.id }}/checkin-all" class="pf-inline js-toast">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="pf-btn pf-btn-manage" type="submit">全部签到</button>
-          </form>
-          <form method="post" action="/admin/platforms/{{ p.id }}/sync" class="pf-inline">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="pf-btn pf-btn-manage" type="submit">同步模型</button>
-          </form>
-          <form method="post" action="/admin/platforms/{{ p.id }}/toggle" class="pf-inline">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="pf-btn pf-btn-manage" type="submit">{{ '停用' if p.enabled else '启用' }}</button>
-          </form>
-        </div>
-      </div>
-      {% elif p.kind == 'trae' %}
-      <div class="pf-sec">
-        <div style="display:flex;gap:8px">
-          <a class="pf-btn pf-btn-add" href="/admin/platforms/trae/login?region={{ p.region or 'cn' }}">{{ 'Cookie 登录国际版' if (p.region or 'cn') == 'global' else '添加 Trae 国内版账号' }}</a>
-          <form method="post" action="/admin/platforms/{{ p.id }}/toggle" class="pf-inline">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="pf-btn pf-btn-manage" type="submit">{{ '停用' if p.enabled else '启用' }}</button>
-          </form>
-        </div>
-      </div>
-      {% endif %}
-    </div>
   </div>
 {% endfor %}
 </div>
@@ -538,53 +387,12 @@
 
 <script>
 (function () {
-  // 管理 / 返回：卡片内切换详情层
-  document.querySelectorAll('.pf-btn-manage[data-card]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var card = btn.closest('.pf-card');
-      var panel = card.querySelector('.pf-detail');
-      var isOpen = panel.classList.contains('open');
-
-      document.querySelectorAll('.pf-detail.open').forEach(function (p) { p.classList.remove('open'); });
-      document.querySelectorAll('.pf-btn-manage.on').forEach(function (b) {
-        b.classList.remove('on');
-        if (b.dataset.card) b.textContent = '管理';
-      });
-
-      if (!isOpen) {
-        panel.classList.add('open');
-        btn.classList.add('on');
-        btn.textContent = '返回';
-      }
-    });
-  });
-
-  // 添加账号：展开详情并滚到导入区
+  // 「添加账号」直接跳到该平台的详细管理页，并定位到导入区域
   document.querySelectorAll('.pf-btn-add[data-open-add]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var id = btn.dataset.openAdd;
-      var card = btn.closest('.pf-card');
-      var panel = card.querySelector('.pf-detail');
-
-      document.querySelectorAll('.pf-detail.open').forEach(function (p) { p.classList.remove('open'); });
-      document.querySelectorAll('.pf-btn-manage.on').forEach(function (b) {
-        b.classList.remove('on');
-        if (b.dataset.card) b.textContent = '管理';
-      });
-
-      panel.classList.add('open');
-      var manage = card.querySelector('.pf-btn-manage[data-card]');
-      if (manage) { manage.classList.add('on'); manage.textContent = '返回'; }
-
-      var add = document.getElementById('sec-add-' + id);
-      if (add) {
-        add.style.display = '';
-        add.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        var ta = add.querySelector('textarea');
-        if (ta) ta.focus();
-      }
+      window.location.href = '/admin/platforms/' + btn.dataset.openAdd + '#add-account';
     });
   });
-})();
+});
 </script>
 {% endblock %}

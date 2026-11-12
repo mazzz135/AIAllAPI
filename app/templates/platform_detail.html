@@ -45,6 +45,23 @@
   {% if provider.last_error %}<div class="flash flash-err">{{ provider.last_error[:300] }}</div>{% endif %}
 </section>
 
+<section class="panel" id="add-account">
+  <div class="panel-head">
+    <div><h2>手动导入凭据 / PAT</h2><p>适用于已有 access_token / PAT 的场景，无需走网页授权</p></div>
+  </div>
+  <form method="post" action="/admin/platforms/{{ provider.id }}/accounts/manual" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="form-grid">
+      <label>账号名称<input name="name" placeholder="可选，留空自动生成"></label>
+      <label>UID（Qoder / WorkBuddy / CodeBuddy 必填）<input name="uid" placeholder="用户 ID"></label>
+    </div>
+    <label>凭据
+      <textarea name="credential" rows="5" required placeholder='{% if provider.kind == "qoder" %}粘贴 Qoder CLI user JSON，或直接粘贴 PAT（需同时填写 UID）{% elif provider.kind in ("workbuddy", "codebuddy") %}{"access_token":"...","refresh_token":"...","uid":"..."}{% else %}{"auth":{"accessToken":"...","refreshToken":"..."},"account":{"uid":"..."}}{% endif %}'></textarea>
+    </label>
+    <div><button class="btn btn-primary" type="submit">导入账号</button></div>
+  </form>
+</section>
+
 <section class="panel">
   <div class="panel-head"><div><h2>账号列表</h2><p>剩余、已用、总积分；点击刷新积分获取最新数据</p></div><span class="pill" data-refresh-status hidden></span></div>
   {% if accounts %}
