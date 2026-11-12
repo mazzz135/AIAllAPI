@@ -95,8 +95,21 @@ a.pf-btn-add { color: #fff; }
 .pf-group-title {
   font-size: 9.5px; font-weight: 600; color: #b6bcc6;
   letter-spacing: .6px; margin-bottom: 5px;
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 16px;
 }
 .pf-group.money .pf-group-title { color: #8fb4e8; }
+
+/* 组标题右上角小按钮 */
+.pf-mini-btn, .pf-mini-add {
+  font-size: 10px; padding: 2px 6px;
+  background: #eff6ff; color: #2563eb;
+  border-radius: 4px; text-decoration: none;
+  line-height: 1.3; white-space: nowrap;
+}
+.pf-mini-btn:hover, .pf-mini-add:hover {
+  background: #dbeafe;
+}
 
 .pf-cells { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
 .pf-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
@@ -122,12 +135,6 @@ a.pf-btn-add { color: #fff; }
   display: flex; align-items: center; justify-content: space-between;
   font-size: 11.5px; flex-shrink: 0; border-top: 1px solid #f1f3f6;
 }
-.pf-trae-login {
-  position: absolute; left: 18px; bottom: 42px;
-  font-size: 11px; color: #2563eb; text-decoration: none;
-  padding: 4px 8px; background: #eff6ff; border-radius: 5px;
-}
-.pf-trae-login:hover { background: #dbeafe; }
 .pf-region {
   padding: 3px 8px; border-radius: 5px;
   font-size: 10.5px; font-weight: 600; letter-spacing: .3px;
@@ -275,17 +282,17 @@ a.pf-btn-add { color: #fff; }
       </div>
       <div class="pf-actions">
         <a href="/admin/platforms/{{ p.id }}" class="pf-btn pf-btn-manage" title="进入平台详细管理">管理</a>
-        <button type="button" class="pf-btn pf-btn-add" data-open-add="{{ p.id }}">添加账号</button>
-        <form method="post" action="/admin/platforms/{{ p.id }}/test" class="pf-inline js-test">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <button type="submit" class="pf-btn pf-btn-test" title="只读探测：拉取一次模型列表，不写库、不消耗额度">测试</button>
-        </form>
       </div>
     </div>
     <!-- body：四行分组 -->
     <div class="pf-body">
       <div class="pf-group status">
-        <div class="pf-group-title">账号</div>
+        <div class="pf-group-title">
+          <span>账号</span>
+          {% if not archived %}
+          <a href="/admin/platforms/{{ p.id }}" class="pf-mini-btn pf-mini-add" title="前往该平台登录页添加账号">+ 添加账号</a>
+          {% endif %}
+        </div>
         <div class="pf-cells">
           <div class="pf-cell">
             <span class="pf-cell-label">账号数量</span>
@@ -303,7 +310,15 @@ a.pf-btn-add { color: #fff; }
       </div>
 
       <div class="pf-group money">
-        <div class="pf-group-title">积分</div>
+        <div class="pf-group-title">
+          <span>积分</span>
+          {% if not archived %}
+          <form method="post" action="/admin/platforms/{{ p.id }}/quota-all" class="pf-inline js-refresh" style="margin:0">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="pf-mini-btn" title="刷新所有账号额度">↻ 刷新</button>
+          </form>
+          {% endif %}
+        </div>
         <div class="pf-cells">
           <div class="pf-cell">
             <span class="pf-cell-label">总积分</span>
@@ -321,7 +336,15 @@ a.pf-btn-add { color: #fff; }
       </div>
 
       <div class="pf-group chat">
-        <div class="pf-group-title">对话</div>
+        <div class="pf-group-title">
+          <span>对话</span>
+          {% if not archived %}
+          <form method="post" action="/admin/platforms/{{ p.id }}/test" class="pf-inline js-test" style="margin:0">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="pf-mini-btn" title="只读探测：拉取一次模型列表，不写库、不消耗额度">测试</button>
+          </form>
+          {% endif %}
+        </div>
         <div class="pf-cells">
           <div class="pf-cell">
             <span class="pf-cell-label">今日对话</span>
@@ -367,9 +390,6 @@ a.pf-btn-add { color: #fff; }
       <span class="pf-sync">同步于 {{ fmt_ts(p.last_synced_at) }}</span>
     </div>
 
-    {% if p.kind == 'trae' %}
-    <a class="pf-trae-login" href="/admin/platforms/trae/login?region={{ p.region or 'cn' }}">{{ 'Cookie 登录国际版' if (p.region or 'cn') == 'global' else '添加 Trae 国内版账号' }}</a>
-    {% endif %}
   </div>
 {% endfor %}
 </div>
@@ -395,15 +415,4 @@ a.pf-btn-add { color: #fff; }
   </div>
 </section>
 {% endif %}
-
-<script>
-(function () {
-  // 「添加账号」直接跳到该平台的详细管理页，并定位到导入区域
-  document.querySelectorAll('.pf-btn-add[data-open-add]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      window.location.href = '/admin/platforms/' + btn.dataset.openAdd + '#add-account';
-    });
-  });
-});
-</script>
 {% endblock %}
