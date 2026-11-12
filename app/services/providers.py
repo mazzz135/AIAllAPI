@@ -68,9 +68,11 @@ class ProviderService:
             sql += " WHERE enabled=1"
         sql += (
             " ORDER BY CASE id"
-            " WHEN 'trae-cn' THEN 0 WHEN 'trae-global' THEN 1 WHEN 'workbuddy' THEN 2"
-            " WHEN 'codebuddy' THEN 3 WHEN 'lobster' THEN 4 WHEN 'qoder-cn' THEN 5"
-            " WHEN 'qoder-global' THEN 6 ELSE 20 END, id"
+            # 主用平台在前；两个国际版排到最后（页面上按「封存」灰色展示）
+            " WHEN 'trae-cn' THEN 0 WHEN 'workbuddy' THEN 1"
+            " WHEN 'codebuddy' THEN 2 WHEN 'lobster' THEN 3 WHEN 'qoder-cn' THEN 4"
+            " WHEN 'trae-global' THEN 8 WHEN 'qoder-global' THEN 9"
+            " ELSE 20 END, id"
         )
         return [self._row_provider(row) for row in self.db.query(sql)]
 

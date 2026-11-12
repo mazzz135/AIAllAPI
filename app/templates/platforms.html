@@ -8,211 +8,511 @@
 {% endblock %}
 {% block content %}
 
+<style>
+/* ============ 平台卡片（400 × 500） ============ */
+.pf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 400px);
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.pf-card {
+  position: relative;
+  width: 400px;
+  height: 500px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16,24,40,.06), 0 6px 20px rgba(16,24,40,.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow .22s, transform .22s;
+}
+.pf-card:hover {
+  box-shadow: 0 2px 6px rgba(16,24,40,.08), 0 14px 34px rgba(16,24,40,.11);
+  transform: translateY(-3px);
+}
+.pf-card.is-off { opacity: .72; }
+.pf-card.archived {
+  opacity: .65;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+}
+.pf-card.archived .pf-name { color: #9ca3af; }
+.pf-card.archived .pf-group-title { color: #9ca3af; }
+
+/* header */
+.pf-head {
+  height: 64px; padding: 0 18px;
+  display: flex; align-items: center; gap: 11px;
+  flex-shrink: 0; border-bottom: 1px solid #f1f3f6;
+}
+.pf-logo {
+  width: 34px; height: 34px; border-radius: 9px;
+  object-fit: cover; flex-shrink: 0; background: #f4f6f9;
+}
+.pf-title { flex: 1; min-width: 0; }
+.pf-name {
+  font-size: 14px; font-weight: 650; color: #111827; letter-spacing: -.1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+}
+.pf-sub { font-size: 11px; color: #9aa1ab; margin-top: 1px; }
+.pf-actions { display: flex; gap: 5px; flex-shrink: 0; }
+.pf-btn {
+  padding: 5px 9px; border-radius: 7px; border: none; cursor: pointer;
+  font-size: 11.5px; font-weight: 550; transition: .15s; white-space: nowrap;
+  font-family: inherit;
+}
+.pf-btn-manage { background: #f4f6f9; color: #4b5563; }
+.pf-btn-manage:hover { background: #e9edf3; }
+.pf-btn-manage.on { background: #111827; color: #fff; }
+.pf-btn-add { background: #16a34a; color: #fff; }
+.pf-btn-add:hover { background: #15803d; }
+.pf-btn-test { background: #2563eb; color: #fff; }
+.pf-btn-test:hover { background: #1d4ed8; }
+
+/* body：四行语义分组 */
+.pf-body {
+  flex: 1; padding: 14px 18px 16px;
+  display: flex; flex-direction: column; gap: 8px; min-height: 0;
+}
+.pf-group {
+  display: flex; flex-direction: column; justify-content: center;
+  border-radius: 10px; padding: 7px 11px;
+  background: #fbfcfd; transition: background .15s;
+}
+.pf-group:hover { background: #f6f8fb; }
+.pf-group.money { flex: 1.35; background: #f8fbff; box-shadow: inset 0 0 0 1px #e8f0fe; }
+.pf-group.money:hover { background: #f2f8ff; }
+.pf-group.status { flex: 1; }
+.pf-group.chat { flex: 1; }
+.pf-group.cost { flex: .92; }
+
+.pf-group-title {
+  font-size: 9.5px; font-weight: 600; color: #b6bcc6;
+  letter-spacing: .6px; margin-bottom: 5px;
+}
+.pf-group.money .pf-group-title { color: #8fb4e8; }
+
+.pf-cells { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.pf-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.pf-cell-label {
+  font-size: 10px; color: #9aa1ab; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pf-cell-value {
+  font-size: 16px; font-weight: 680; color: #111827; line-height: 1.3;
+  letter-spacing: -.3px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.pf-group.money .pf-cell-value { font-size: 17px; }
+.pf-cell-value.ok    { color: #16a34a; }
+.pf-cell-value.bad   { color: #dc2626; }
+.pf-cell-value.warn  { color: #ea580c; }
+.pf-cell-value.muted { color: #c2c8d0; }
+
+/* footer */
+.pf-foot {
+  height: 42px; padding: 0 18px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; flex-shrink: 0; border-top: 1px solid #f1f3f6;
+}
+.pf-region {
+  padding: 3px 8px; border-radius: 5px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .3px;
+}
+.pf-region.cn { background: #eff6ff; color: #2563eb; }
+.pf-region.global { background: #fff7ed; color: #ea580c; }
+.pf-region.none { background: #f4f6f9; color: #9aa1ab; }
+.pf-sync { color: #b6bcc6; font-size: 11px; }
+
+/* 详情层 */
+.pf-detail {
+  position: absolute; left: 0; right: 0; top: 64px; bottom: 42px;
+  background: #fff; padding: 16px 18px; overflow-y: auto;
+  opacity: 0; visibility: hidden; transform: translateY(6px);
+  transition: .18s;
+}
+.pf-detail.open { opacity: 1; visibility: visible; transform: translateY(0); }
+.pf-detail::-webkit-scrollbar { width: 6px; }
+.pf-detail::-webkit-scrollbar-thumb { background: #e2e6ec; border-radius: 3px; }
+
+.pf-sec { margin-bottom: 16px; }
+.pf-sec:last-child { margin-bottom: 0; }
+.pf-sec-title {
+  font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pf-sec-title .cnt { font-size: 11px; font-weight: 500; color: #b6bcc6; }
+
+/* 账号列表 */
+.pf-acct-list {
+  border-radius: 9px; overflow: hidden; background: #fbfcfd;
+  max-height: 200px; overflow-y: auto;
+}
+.pf-acct {
+  padding: 9px 11px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid #f1f3f6;
+}
+.pf-acct:last-child { border-bottom: none; }
+.pf-acct-main { flex: 1; min-width: 0; }
+.pf-acct-name {
+  font-size: 12px; font-weight: 550; color: #111827;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pf-acct-meta {
+  font-size: 10px; color: #9aa1ab; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pf-pill {
+  font-size: 10px; padding: 2px 7px; border-radius: 4px;
+  font-weight: 600; flex-shrink: 0;
+}
+.pf-pill.ok  { background: #f0fdf4; color: #15803d; }
+.pf-pill.bad { background: #fef2f2; color: #dc2626; }
+
+.pf-acct-ops { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.pf-acct-ops .pf-btn { padding: 3px 6px; font-size: 10px; }
+.pf-mini-input {
+  width: 82px; padding: 3px 6px; font-size: 10px;
+  border: 1px solid #e5e8ee; border-radius: 5px;
+  background: #fff; color: #374151; font-family: inherit;
+}
+.pf-mini-input:focus { outline: none; border-color: #2563eb; }
+
+/* 导入 / 配置 */
+.pf-import {
+  display: flex; gap: 8px; align-items: center;
+  padding: 11px; background: #f8fafc; border-radius: 9px;
+}
+.pf-btn-import {
+  background: #4f46e5; color: #fff; padding: 6px 12px; border-radius: 7px;
+  border: none; font-size: 11.5px; font-weight: 550; cursor: pointer;
+  font-family: inherit;
+}
+.pf-btn-import:hover { background: #4338ca; }
+.pf-import-tip { font-size: 11px; color: #9aa1ab; }
+
+.pf-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pf-field:last-child { margin-bottom: 0; }
+.pf-field label { font-size: 11px; color: #9aa1ab; width: 64px; flex-shrink: 0; }
+.pf-field input, .pf-field select, .pf-field textarea {
+  flex: 1; min-width: 0; padding: 6px 9px;
+  border: 1px solid #e5e8ee; border-radius: 7px;
+  font-size: 11px; color: #374151; background: #fff;
+  font-family: inherit;
+}
+.pf-field input:focus, .pf-field select:focus, .pf-field textarea:focus {
+  outline: none; border-color: #2563eb;
+}
+.pf-field textarea { resize: vertical; min-height: 60px; }
+
+.pf-alert {
+  margin: 0 0 10px; padding: 8px 10px;
+  background: #fef2f2; color: #b91c1c;
+  border-radius: 7px; font-size: 10.5px; line-height: 1.45;
+  word-break: break-all;
+}
+
+/* 模型标签 */
+.pf-models { display: flex; flex-wrap: wrap; gap: 4px; }
+.pf-model-tag {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: #f4f6f9; color: #6b7280;
+  font-family: ui-monospace, monospace;
+}
+</style>
+
 <section class="panel">
   <div class="panel-head">
     <div><h2>内置平台</h2><p>WorkBuddy、CodeBuddy、LobsterAI、Trae 国内/国际、Qoder 国内/国际统一接入</p></div>
     <span class="pill">{{ platforms|length }} 个平台</span>
   </div>
-  <div class="callout">
-    <p>每个平台可添加多个账号，按权重轮询；账号失效自动跳过。模型在「模型管理」中绑定平台与上游模型名。</p>
-  </div>
 </section>
 
+<div class="pf-grid">
 {% for p in platforms %}
-<section class="panel">
-  <div class="panel-head">
-    <div>
-      <h2>{{ p.name }} <span class="badge {{ 'success' if p.enabled else 'muted' }}">{{ '启用' if p.enabled else '停用' }}</span></h2>
-      <p><code>{{ p.id }}</code> · {{ p.kind }} · {{ p.region or '—' }} · {{ p.base_url }}</p>
+  {% set logo = {
+    'workbuddy': '/static/logos/workbuddy.svg',
+    'codebuddy': '/static/logos/codebuddy.svg',
+    'trae-cn': '/static/logos/trae.svg',
+    'trae-global': '/static/logos/trae.svg',
+    'lobster': '/static/logos/lobster.png',
+    'qoder-cn': '/static/logos/qoder-cn.svg',
+    'qoder-global': '/static/logos/qoder.svg'
+  }.get(p.id, '') %}
+  {% set region = (p.region or '')|lower %}
+  {% set st = p.stats or {} %}
+  {% set unit = 'USD' if (p.accounts and p.accounts[0].credit_unit == 'USD') else 'CREDITS' %}
+  {% set sym = '$' if unit == 'USD' else '¥' %}
+
+  {% set archived = (p.id in ('trae-global', 'qoder-global')) or (not p.enabled) %}
+
+  <div class="pf-card {{ 'archived' if archived else '' }}">
+    <!-- header -->
+    <div class="pf-head">
+      {% if logo %}
+      <img src="{{ logo }}" alt="{{ p.name }}" class="pf-logo">
+      {% else %}
+      <div class="pf-logo" style="display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#9aa1ab">{{ p.name[:2] }}</div>
+      {% endif %}
+      <div class="pf-title">
+        <span class="pf-name">{{ p.name }}{% if archived %} <span style="font-size:10px;font-weight:500;color:#9ca3af;background:#f3f4f6;padding:1px 6px;border-radius:4px;margin-left:4px">封存</span>{% endif %}</span>
+        <span class="pf-sub">{{ p.id }}{% if not p.enabled and not archived %} · 已停用{% endif %}</span>
+      </div>
+      <div class="pf-actions">
+        <button type="button" class="pf-btn pf-btn-manage" data-card="{{ p.id }}">管理</button>
+        <button type="button" class="pf-btn pf-btn-add" data-open-add="{{ p.id }}">添加账号</button>
+        <form method="post" action="/admin/platforms/{{ p.id }}/test" class="pf-inline js-test">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <button type="submit" class="pf-btn pf-btn-test" title="只读探测：拉取一次模型列表，不写库、不消耗额度">测试</button>
+        </form>
+      </div>
     </div>
-    <div class="row-actions">
-      <a class="mini-btn primary" href="/admin/platforms/{{ p.id }}">进入管理</a>
-      <form method="post" action="/admin/platforms/{{ p.id }}/test" class="inline-form js-test">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="mini-btn" type="submit" title="只读探测：拉取一次模型列表，不写库、不消耗额度">测试</button>
-      </form>
+
+    <!-- body：四行分组 -->
+    <div class="pf-body">
+      <div class="pf-group status">
+        <div class="pf-group-title">账号</div>
+        <div class="pf-cells">
+          <div class="pf-cell">
+            <span class="pf-cell-label">账号数量</span>
+            <span class="pf-cell-value ok">{{ p.account_count or 0 }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">失效数量</span>
+            <span class="pf-cell-value {{ 'bad' if p.failed_count else 'muted' }}">{{ p.failed_count or 0 }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">模型数量</span>
+            <span class="pf-cell-value">{{ p.model_count or (p.models|length) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pf-group money">
+        <div class="pf-group-title">积分</div>
+        <div class="pf-cells">
+          <div class="pf-cell">
+            <span class="pf-cell-label">总积分</span>
+            <span class="pf-cell-value">{{ sym }}{{ '%.2f'|format(st.total|float) if st.total is not none else '—' }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">剩余积分</span>
+            <span class="pf-cell-value {{ 'ok' if st.remaining and st.remaining > 0 else 'muted' }}">{{ sym }}{{ '%.2f'|format(st.remaining|float) if st.remaining is not none else '—' }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">已使用积分</span>
+            <span class="pf-cell-value {{ 'warn' if st.used and st.used > 0 else 'muted' }}">{{ sym }}{{ '%.2f'|format(st.used|float) if st.used is not none else '—' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pf-group chat">
+        <div class="pf-group-title">对话</div>
+        <div class="pf-cells">
+          <div class="pf-cell">
+            <span class="pf-cell-label">今日对话</span>
+            <span class="pf-cell-value {{ '' if st.today_requests else 'muted' }}">{{ st.today_requests or 0 }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">本周对话</span>
+            <span class="pf-cell-value {{ '' if st.week_requests else 'muted' }}">{{ st.week_requests or 0 }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">本月对话</span>
+            <span class="pf-cell-value {{ '' if st.month_requests else 'muted' }}">{{ st.month_requests or 0 }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pf-group cost">
+        <div class="pf-group-title">消耗</div>
+        <div class="pf-cells">
+          <div class="pf-cell">
+            <span class="pf-cell-label">Token 消耗</span>
+            <span class="pf-cell-value {{ '' if st.today_tokens else 'muted' }}">{{ fmt_tokens(st.today_tokens or 0) }}</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">缓存命中率</span>
+            <span class="pf-cell-value {{ '' if st.cache_hit_rate else 'muted' }}">{{ '%.0f'|format(st.cache_hit_rate or 0) }}%</span>
+          </div>
+          <div class="pf-cell">
+            <span class="pf-cell-label">最近活动</span>
+            <span class="pf-cell-value muted">{{ fmt_ago(st.last_activity) if st.last_activity else '无' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- footer -->
+    <div class="pf-foot">
+      {% if region in ('cn', 'global') %}
+      <span class="pf-region {{ region }}">{{ region|upper }}</span>
+      {% else %}
+      <span class="pf-region none">{{ p.base_url.split('//')[-1].split('/')[0] if p.base_url else '—' }}</span>
+      {% endif %}
+      <span class="pf-sync">同步于 {{ fmt_ts(p.last_synced_at) }}</span>
+    </div>
+
+    <!-- 详情层：账号列表 + 导入 + 配置 -->
+    <div class="pf-detail" data-detail="{{ p.id }}">
+      {% if p.last_error %}
+      <div class="pf-alert">{{ p.last_error[:220] }}</div>
+      {% endif %}
+
+      {% set accts = p.accounts if p.kind != 'trae' else trae_accounts.get(p.region or 'cn', []) %}
+      <div class="pf-sec" id="sec-accts-{{ p.id }}">
+        <div class="pf-sec-title">账号列表 <span class="cnt">{{ accts|length }} 个</span></div>
+        {% if accts %}
+        <div class="pf-acct-list">
+          {% for a in accts %}
+          <div class="pf-acct">
+            <div class="pf-acct-main">
+              <div class="pf-acct-name">{{ a.name }}</div>
+              <div class="pf-acct-meta">
+                UID {{ (a.uid or '—')[:16] }} ·
+                {{ fmt_money(a.credits) if a.credit_unit == 'USD' else fmt_credits(a.credits) }} ·
+                {{ fmt_ts(a.last_checkin_at or a.last_used_at) }}
+              </div>
+              {% if a.manual_disabled %}
+              <div class="pf-acct-meta" style="color:#ea580c">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>
+              {% endif %}
+              {% if a.last_error %}
+              <div class="pf-acct-meta" style="color:#dc2626">{{ a.last_error[:80] }}</div>
+              {% endif %}
+            </div>
+            <span class="pf-pill {{ 'ok' if a.enabled and a.status == 'ready' else 'bad' }}">
+              {{ '正常' if a.enabled and a.status == 'ready' else ('停用' if not a.enabled else (a.status or '异常')) }}
+            </span>
+            <div class="pf-acct-ops">
+              {% if p.kind != 'trae' %}
+              <form method="post" action="/admin/platforms/accounts/{{ a.id }}/quota" class="pf-inline js-refresh">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn pf-btn-manage" type="submit">刷新</button>
+              </form>
+              <form method="post" action="/admin/platforms/accounts/{{ a.id }}/checkin" class="pf-inline js-toast">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn pf-btn-manage" type="submit">签到</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/accounts/{{ a.id }}/refresh" class="pf-inline js-refresh">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn pf-btn-manage" type="submit">刷新</button>
+              </form>
+              <form method="post" action="/admin/accounts/{{ a.id }}/checkin" class="pf-inline js-toast">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn pf-btn-manage" type="submit">签到</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/toggle" class="pf-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn pf-btn-manage" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
+              </form>
+              {% if a.manual_disabled %}
+              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/enable" class="pf-inline js-toast">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn pf-btn-manage" type="submit">恢复流量</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/disable" class="pf-inline js-toast">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input class="pf-mini-input" name="reason" placeholder="摘除原因（可选）" maxlength="200" title="仅用于记录为什么把这个账号移出对话轮换，不影响签到与保活">
+                <button class="pf-btn pf-btn-manage" type="submit">摘除流量</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/admin/{{ 'platforms/accounts' if p.kind != 'trae' else 'accounts' }}/{{ a.id }}/delete" class="pf-inline" data-confirm="确认删除账号 {{ a.name }}？">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="pf-btn" style="background:#fef2f2;color:#dc2626" type="submit">删除</button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="pf-import"><span class="pf-import-tip">暂无账号，点击「添加账号」导入凭据</span></div>
+        {% endif %}
+      </div>
+
+      <div class="pf-sec" id="sec-add-{{ p.id }}" {% if not accts %}style="display:none"{% endif %}>
+        <div class="pf-sec-title">导入凭据 / PAT</div>
+        <form method="post" action="/admin/platforms/{{ p.id }}/accounts/manual" class="pf-stack">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="pf-field">
+            <label>账号名称</label>
+            <input name="name" placeholder="可选，留空自动">
+          </div>
+          <div class="pf-field">
+            <label>UID</label>
+            <input name="uid" placeholder="Qoder / WorkBuddy / CodeBuddy 必填">
+          </div>
+          <div class="pf-field" style="align-items:flex-start">
+            <label style="padding-top:6px">凭据</label>
+            <textarea name="credential" rows="4" required placeholder='{% if p.kind == "qoder" %}粘贴 Qoder CLI user JSON，或直接粘贴 PAT（需同时填写 UID）{% elif p.kind in ("workbuddy", "codebuddy") %}{"access_token":"...","refresh_token":"...","uid":"..."}{% else %}{"auth":{"accessToken":"...","refreshToken":"..."},"account":{"uid":"..."}}{% endif %}'></textarea>
+          </div>
+          <div style="text-align:right"><button class="pf-btn-import" type="submit">导入账号</button></div>
+        </form>
+      </div>
+
+      <div class="pf-sec">
+        <div class="pf-sec-title">平台地址与高级配置</div>
+        <form method="post" action="/admin/platforms/{{ p.id }}/config" class="pf-stack">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="pf-field">
+            <label>Base URL</label>
+            <input name="base_url" value="{{ p.base_url }}">
+          </div>
+          <div class="pf-field" style="align-items:flex-start">
+            <label style="padding-top:6px">配置</label>
+            <textarea name="config_json" rows="2">{{ p.config | tojson }}</textarea>
+          </div>
+          <div style="text-align:right"><button class="pf-btn pf-btn-manage" type="submit">保存配置</button></div>
+        </form>
+      </div>
+
+      {% if p.models %}
+      <div class="pf-sec">
+        <div class="pf-sec-title">模型 <span class="cnt">{{ p.models|length }} 个</span></div>
+        <div class="pf-models">
+          {% for m in p.models[:24] %}<span class="pf-model-tag" title="{{ m.id }}">{{ m.id }}</span>{% endfor %}
+          {% if p.models|length > 24 %}<span class="pf-import-tip">+{{ p.models|length - 24 }}</span>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+
       {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
-      <form method="post" action="/admin/platforms/{{ p.id }}/checkin-all" class="inline-form js-toast">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="mini-btn" type="submit">全部签到</button>
-      </form>
-      {% endif %}
-      {% if p.kind in ('workbuddy', 'codebuddy', 'qoder') %}
-      <form method="post" action="/admin/platforms/{{ p.id }}/login/start" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="mini-btn primary" type="submit">网页登录</button>
-      </form>
-      {% elif p.kind == 'lobster' %}
-      <form method="post" action="/admin/platforms/{{ p.id }}/login/start" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="mini-btn primary" type="submit">生成授权链接</button>
-      </form>
+      <div class="pf-sec">
+        <div style="display:flex;gap:8px">
+          <form method="post" action="/admin/platforms/{{ p.id }}/checkin-all" class="pf-inline js-toast">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="pf-btn pf-btn-manage" type="submit">全部签到</button>
+          </form>
+          <form method="post" action="/admin/platforms/{{ p.id }}/sync" class="pf-inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="pf-btn pf-btn-manage" type="submit">同步模型</button>
+          </form>
+          <form method="post" action="/admin/platforms/{{ p.id }}/toggle" class="pf-inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="pf-btn pf-btn-manage" type="submit">{{ '停用' if p.enabled else '启用' }}</button>
+          </form>
+        </div>
+      </div>
       {% elif p.kind == 'trae' %}
-      <a class="mini-btn primary" href="/admin/platforms/trae/login?region={{ p.region or 'cn' }}">{{ 'Cookie 登录国际版' if (p.region or 'cn') == 'global' else '添加 Trae 国内版账号' }}</a>
+      <div class="pf-sec">
+        <div style="display:flex;gap:8px">
+          <a class="pf-btn pf-btn-add" href="/admin/platforms/trae/login?region={{ p.region or 'cn' }}">{{ 'Cookie 登录国际版' if (p.region or 'cn') == 'global' else '添加 Trae 国内版账号' }}</a>
+          <form method="post" action="/admin/platforms/{{ p.id }}/toggle" class="pf-inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="pf-btn pf-btn-manage" type="submit">{{ '停用' if p.enabled else '启用' }}</button>
+          </form>
+        </div>
+      </div>
       {% endif %}
-      {% if p.kind != 'trae' %}
-      <form method="post" action="/admin/platforms/{{ p.id }}/sync" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="mini-btn" type="submit">同步模型</button>
-      </form>
-      {% endif %}
-      <form method="post" action="/admin/platforms/{{ p.id }}/toggle" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="mini-btn" type="submit">{{ '停用' if p.enabled else '启用' }}</button>
-      </form>
     </div>
   </div>
-
-  <div class="stat-grid small-grid" style="margin-bottom:12px">
-    <div class="stat-card"><div class="stat-label">账号</div><div class="stat-value">{{ p.account_count }}</div></div>
-    <div class="stat-card"><div class="stat-label">模型</div><div class="stat-value">{{ p.model_count }}</div></div>
-    <div class="stat-card"><div class="stat-label">区域</div><div class="stat-value" style="font-size:20px">{{ p.region or '—' }}</div></div>
-    <div class="stat-card"><div class="stat-label">最近同步</div><div class="stat-value" style="font-size:18px">{{ fmt_ts(p.last_synced_at) }}</div></div>
-  </div>
-  {% if p.last_error %}<div class="flash flash-err" style="margin:0 0 12px">{{ p.last_error[:300] }}</div>{% endif %}
-
-  {% if p.kind != 'trae' %}
-  <div class="table-wrap">
-    <table class="table compact">
-      <thead><tr><th>账号</th><th>UID</th><th>积分</th><th>状态</th><th>最近签到</th><th class="right">操作</th></tr></thead>
-      <tbody>
-      {% for a in p.accounts %}
-        <tr data-account-id="{{ a.id }}">
-          <td><strong>{{ a.name }}</strong><div class="muted small">#{{ a.id }} · {{ a.auth_type }}</div></td>
-          <td><code>{{ a.uid or '—' }}</code></td>
-          <td data-field="credits" data-unit="{{ a.credit_unit or 'credits' }}">{{ fmt_money(a.credits) if a.credit_unit == 'USD' else fmt_credits(a.credits) }}</td>
-          <td>
-            <span class="badge {{ 'success' if a.enabled and a.status == 'ready' else 'muted' }}">{{ '正常' if a.enabled and a.status == 'ready' else ('停用' if not a.enabled else a.status) }}</span>
-            {% if a.last_error %}<div class="account-error">{{ a.last_error[:90] }}</div>{% endif %}
-            {% if a.manual_disabled %}<div class="muted small">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>{% endif %}
-          </td>
-          <td class="muted small">{{ fmt_ts(a.last_checkin_at) }}</td>
-          <td class="right">
-            {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
-            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/quota" class="inline-form js-refresh">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">刷新积分</button>
-            </form>
-            {% endif %}
-            {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
-            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/checkin" class="inline-form js-toast">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">签到</button>
-            </form>
-            {% endif %}
-            {% if a.manual_disabled %}
-            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/enable" class="inline-form js-toast">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">恢复流量</button>
-            </form>
-            {% else %}
-            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/disable" class="inline-form js-toast">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <input class="mini-input" name="reason" placeholder="摘除原因（可选）" maxlength="200" title="仅用于记录为什么把这个账号移出对话轮换，不影响签到与保活">
-              <button class="mini-btn" type="submit">摘除流量</button>
-            </form>
-            {% endif %}
-            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/toggle" class="inline-form">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
-            </form>
-            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/delete" class="inline-form" data-confirm="确认删除账号 {{ a.name }}？">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn danger" type="submit">删除</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <details class="inline-add">
-    <summary class="link">导入凭据 / PAT</summary>
-    <form method="post" action="/admin/platforms/{{ p.id }}/accounts/manual" class="stack" style="margin-top:10px">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="form-grid">
-        <label>账号名称<input name="name" placeholder="可选"></label>
-        <label>UID（Qoder / WorkBuddy 必填）<input name="uid" placeholder="用户 ID"></label>
-      </div>
-      <label>凭据
-        <textarea name="credential" rows="5" required placeholder='{% if p.kind == "qoder" %}粘贴 Qoder CLI user JSON，或直接粘贴 PAT（需同时填写 UID）{% elif p.kind in ("workbuddy", "codebuddy") %}{"access_token":"...","refresh_token":"...","uid":"..."}{% else %}{"auth":{"accessToken":"...","refreshToken":"..."},"account":{"uid":"..."}}{% endif %}'></textarea>
-      </label>
-      <div><button class="btn btn-primary" type="submit">导入账号</button></div>
-    </form>
-  </details>
-  {% else %}
-  {% set tacc = trae_accounts.get(p.region or 'cn', []) %}
-  <div class="table-wrap">
-    <table class="table compact">
-      <thead><tr><th>账号</th><th>UID</th><th>积分</th><th>状态</th><th>最近使用</th><th class="right">操作</th></tr></thead>
-      <tbody>
-      {% for a in tacc %}
-        <tr data-account-id="{{ a.id }}">
-          <td><strong>{{ a.name }}</strong><div class="muted small">#{{ a.id }} · {{ a.auth_type }}</div></td>
-          <td><code>{{ a.uid or '—' }}</code></td>
-          <td data-field="credits" data-unit="{{ a.credit_unit or 'credits' }}">{{ fmt_money(a.credits) if a.credit_unit == 'USD' else fmt_credits(a.credits) }}</td>
-          <td><span class="badge {{ 'success' if a.enabled else 'muted' }}">{{ '正常' if a.enabled else '停用' }}</span>{% if a.last_error %}<div class="account-error">{{ a.last_error[:80] }}</div>{% endif %}{% if a.manual_disabled %}<div class="muted small">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>{% endif %}</td>
-          <td class="muted small">{{ fmt_ts(a.last_used_at) }}</td>
-          <td class="right">
-            <form method="post" action="/admin/accounts/{{ a.id }}/refresh" class="inline-form js-refresh">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">刷新积分</button>
-            </form>
-            <form method="post" action="/admin/accounts/{{ a.id }}/checkin" class="inline-form js-toast">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">签到</button>
-            </form>
-            {% if a.manual_disabled %}
-            <form method="post" action="/admin/accounts/{{ a.id }}/enable" class="inline-form js-toast">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">恢复流量</button>
-            </form>
-            {% else %}
-            <form method="post" action="/admin/accounts/{{ a.id }}/disable" class="inline-form js-toast">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <input class="mini-input" name="reason" placeholder="摘除原因（可选）" maxlength="200" title="仅用于记录为什么把这个账号移出对话轮换，不影响签到与保活">
-              <button class="mini-btn" type="submit">摘除流量</button>
-            </form>
-            {% endif %}
-            <form method="post" action="/admin/accounts/{{ a.id }}/toggle" class="inline-form">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
-            </form>
-            <form method="post" action="/admin/accounts/{{ a.id }}/delete" class="inline-form" data-confirm="确认删除账号 {{ a.name }}？">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="mini-btn danger" type="submit">删除</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
-  <details class="inline-add">
-    <summary class="link">平台地址与高级配置</summary>
-    <form method="post" action="/admin/platforms/{{ p.id }}/config" class="stack" style="margin-top:10px">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="form-grid">
-        <label>Base URL<input name="base_url" value="{{ p.base_url }}"></label>
-        <label>配置 JSON<input name="config_json" value='{{ p.config | tojson }}'></label>
-      </div>
-      <div><button class="btn btn-ghost" type="submit">保存配置</button></div>
-    </form>
-  </details>
-
-  {% if p.models %}
-  <div class="model-list">
-    {% for m in p.models[:60] %}
-    <span class="model-tag" title="{{ m.id }}">{{ m.id }}</span>
-    {% endfor %}
-    {% if p.models|length > 60 %}<span class="muted small">+{{ p.models|length - 60 }} more</span>{% endif %}
-  </div>
-  {% endif %}
-</section>
 {% endfor %}
+</div>
 
 {% if pending %}
 <section class="panel">
@@ -235,4 +535,56 @@
   </div>
 </section>
 {% endif %}
+
+<script>
+(function () {
+  // 管理 / 返回：卡片内切换详情层
+  document.querySelectorAll('.pf-btn-manage[data-card]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var card = btn.closest('.pf-card');
+      var panel = card.querySelector('.pf-detail');
+      var isOpen = panel.classList.contains('open');
+
+      document.querySelectorAll('.pf-detail.open').forEach(function (p) { p.classList.remove('open'); });
+      document.querySelectorAll('.pf-btn-manage.on').forEach(function (b) {
+        b.classList.remove('on');
+        if (b.dataset.card) b.textContent = '管理';
+      });
+
+      if (!isOpen) {
+        panel.classList.add('open');
+        btn.classList.add('on');
+        btn.textContent = '返回';
+      }
+    });
+  });
+
+  // 添加账号：展开详情并滚到导入区
+  document.querySelectorAll('.pf-btn-add[data-open-add]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.dataset.openAdd;
+      var card = btn.closest('.pf-card');
+      var panel = card.querySelector('.pf-detail');
+
+      document.querySelectorAll('.pf-detail.open').forEach(function (p) { p.classList.remove('open'); });
+      document.querySelectorAll('.pf-btn-manage.on').forEach(function (b) {
+        b.classList.remove('on');
+        if (b.dataset.card) b.textContent = '管理';
+      });
+
+      panel.classList.add('open');
+      var manage = card.querySelector('.pf-btn-manage[data-card]');
+      if (manage) { manage.classList.add('on'); manage.textContent = '返回'; }
+
+      var add = document.getElementById('sec-add-' + id);
+      if (add) {
+        add.style.display = '';
+        add.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        var ta = add.querySelector('textarea');
+        if (ta) ta.focus();
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}
