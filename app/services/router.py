@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -382,10 +383,17 @@ class RouterService:
         session_key = self.pool.session_key(payload, headers or {})
         if route["type"] == "virtual":
             group_name = route["virtual_model"]
-            async for chunk in self._stream_virtual(route, payload, api_key, ip, endpoint, session_key):
-                yield self._rewrite_stream_model(chunk, group_name)
+            gen = self._stream_virtual(route, payload, api_key, ip, endpoint, session_key)
+            try:
+                async for chunk in gen:
+                    yield self._rewrite_stream_model(chunk, group_name)
+            finally:
+                try:
+                    await gen.aclose()
+                except Exception:
+                    pass
             return
-        async for chunk in self._stream_provider(
+        gen = self._stream_provider(
             route["provider_id"],
             route["model"],
             payload,
@@ -394,8 +402,15 @@ class RouterService:
             endpoint,
             route.get("virtual_model", ""),
             session_key,
-        ):
-            yield chunk
+        )
+        try:
+            async for chunk in gen:
+                yield chunk
+        finally:
+            try:
+                await gen.aclose()
+            except Exception:
+                pass
 
     async def _stream_virtual(self, route, payload, api_key, ip, endpoint, session_key: str = "") -> AsyncIterator[str]:
         group = route["group"]
@@ -426,9 +441,17 @@ class RouterService:
                 except Exception:
                     pass
                 continue
-            yield first
-            async for chunk in gen:
-                yield chunk
+            # 关键：外层提前结束/取消时必须显式 aclose，否则内层 _stream_provider
+            # 的 finally 不会执行，导致「跑通了但后台无记录」。
+            try:
+                yield first
+                async for chunk in gen:
+                    yield chunk
+            finally:
+                try:
+                    await gen.aclose()
+                except Exception:
+                    pass
             return
         yield self._error_frame("虚拟模型组全部成员失败", "virtual_failed")
 
@@ -505,8 +528,8 @@ class RouterService:
                 )
                 logged = True
                 return
-            except GeneratorExit:
-                # 客户端中途断开：仍要记录已产生的用量，标记为 cancelled。
+            except (GeneratorExit, asyncio.CancelledError):
+                # 客户端中途断开（httpx break / 代理超时）：仍要记录已产生的用量，标记为 cancelled。
                 status = "cancelled"
                 err_text = "客户端提前断开"
                 raise

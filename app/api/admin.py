@@ -770,7 +770,7 @@ async def platforms_page(request: Request, admin: dict = Depends(require_admin))
 
 
 # --------------------------------------------------------------------- 用量统计
-@router.get("/platforms/usage-stats")
+@router.get("/api/usage-stats")
 async def platforms_usage_stats(request: Request, days: int = 14, admin: dict = Depends(require_admin)):
     """平台聚合页用量统计：按天 token/请求/成本趋势 + 按平台 + 按模型 Top。"""
     ctx = state(request)

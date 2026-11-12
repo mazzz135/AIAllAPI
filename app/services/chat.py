@@ -361,55 +361,59 @@ class ChatService:
     ) -> None:
         before = credits_before
         after = credits_after
-        if after < 0:
-            try:
-                after = await self.client.get_credits(account)
-            except Exception:
-                after = None
-        if after is not None:
-            self.db.execute(
-                "UPDATE accounts SET credits=?, credits_updated_at=?, last_used_at=?, updated_at=? WHERE id=?",
-                (float(after), int(time.time()), int(time.time()), int(time.time()), int(account["id"])),
-            )
         delta = 0.0
-        if before >= 0 and after is not None:
-            delta = max(0.0, float(before) - float(after))
         estimated = self.accounts.estimate_credits(
             caps, int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)
         )
         latency_ms = int((time.time() - started) * 1000)
         first_token_ms = int(ttft_ms or latency_ms)
         completion_ms = max(0, latency_ms - first_token_ms) if stream else latency_ms
-        self.usage.record(
-            request_id=request_id,
-            api_key_id=api_key.get("id"),
-            api_key_name=api_key.get("name", ""),
-            account_id=account.get("id"),
-            account_name=account.get("name", ""),
-            endpoint=endpoint,
-            model=model,
-            stream=stream,
-            prompt_tokens=int(usage.get("prompt_tokens") or 0),
-            completion_tokens=int(usage.get("completion_tokens") or 0),
-            total_tokens=int(usage.get("total_tokens") or 0),
-            cached_tokens=int(usage.get("cached_tokens") or 0),
-            cache_read_tokens=int(usage.get("cache_read_tokens") or usage.get("cached_tokens") or 0),
-            cache_write_tokens=int(usage.get("cache_write_tokens") or 0),
-            cache_miss_tokens=int(usage.get("cache_miss_tokens") or 0),
-            reasoning_tokens=int(usage.get("reasoning_tokens") or 0),
-            credits_before=before,
-            credits_after=after if after is not None else -1,
-            credits_delta=delta,
-            credits_estimated=estimated,
-            latency_ms=latency_ms,
-            ttft_ms=first_token_ms,
-            completion_ms=completion_ms,
-            status=status,
-            error=error,
-            ip=ip,
-            provider_id=provider_id,
-            virtual_model=virtual_model,
-        )
+        try:
+            # 刷新额度是网络请求，可能被客户端断开取消（CancelledError 不继承
+            # Exception）。用 try/finally 保证日志一定写入。
+            if after < 0:
+                try:
+                    after = await self.client.get_credits(account)
+                except Exception:
+                    after = None
+            if after is not None:
+                self.db.execute(
+                    "UPDATE accounts SET credits=?, credits_updated_at=?, last_used_at=?, updated_at=? WHERE id=?",
+                    (float(after), int(time.time()), int(time.time()), int(time.time()), int(account["id"])),
+                )
+            if before >= 0 and after is not None:
+                delta = max(0.0, float(before) - float(after))
+        finally:
+            self.usage.record(
+                request_id=request_id,
+                api_key_id=api_key.get("id"),
+                api_key_name=api_key.get("name", ""),
+                account_id=account.get("id"),
+                account_name=account.get("name", ""),
+                endpoint=endpoint,
+                model=model,
+                stream=stream,
+                prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                completion_tokens=int(usage.get("completion_tokens") or 0),
+                total_tokens=int(usage.get("total_tokens") or 0),
+                cached_tokens=int(usage.get("cached_tokens") or 0),
+                cache_read_tokens=int(usage.get("cache_read_tokens") or usage.get("cached_tokens") or 0),
+                cache_write_tokens=int(usage.get("cache_write_tokens") or 0),
+                cache_miss_tokens=int(usage.get("cache_miss_tokens") or 0),
+                reasoning_tokens=int(usage.get("reasoning_tokens") or 0),
+                credits_before=before,
+                credits_after=after if after is not None else -1,
+                credits_delta=delta,
+                credits_estimated=estimated,
+                latency_ms=latency_ms,
+                ttft_ms=first_token_ms,
+                completion_ms=completion_ms,
+                status=status,
+                error=error,
+                ip=ip,
+                provider_id=provider_id,
+                virtual_model=virtual_model,
+            )
 
     # ------------------------------------------------------------------ non-stream
     async def complete(
@@ -458,6 +462,8 @@ class ChatService:
                         extracted = extract_usage(data)
                         if extracted["total_tokens"] or extracted["prompt_tokens"] or extracted["completion_tokens"]:
                             usage = extracted
+                            usage_snapshot = dict(extracted)
+                            usage_snapshot = dict(extracted)
                     elif event.event == "done":
                         finish = str(data.get("finish_reason") or "stop")
                         if data.get("_done"):
@@ -556,9 +562,17 @@ class ChatService:
                 yield self._error_frame(str(exc), f"upstream_{exc.http_status or exc.code or 'error'}")
                 return
             emitted = False
+            logged = False
+            body_model = requested_model
+            body_caps: dict[str, Any] = {}
+            usage_snapshot: dict[str, int] = {}
+            credits_before_snapshot = -1.0
             try:
                 body, model, caps = await self.prepare_body(payload, account, requested_model)
+                body_model = model
+                body_caps = caps
                 credits_before = float(account.get("credits") or -1)
+                credits_before_snapshot = credits_before
                 first_token_at = 0.0
                 usage: dict[str, int] = {}
                 tools = ToolAccumulator()
@@ -586,6 +600,8 @@ class ChatService:
                         extracted = extract_usage(data)
                         if extracted["total_tokens"] or extracted["prompt_tokens"] or extracted["completion_tokens"]:
                             usage = extracted
+                            usage_snapshot = dict(extracted)
+                            usage_snapshot = dict(extracted)
                     elif event.event == "done":
                         finish = str(data.get("finish_reason") or "stop")
                         if data.get("_done"):
@@ -618,7 +634,11 @@ class ChatService:
                     virtual_model=virtual_model,
                     ttft_ms=int((first_token_at - started) * 1000) if first_token_at else 0,
                 )
+                logged = True
                 return
+            except (GeneratorExit, asyncio.CancelledError):
+                # 客户端断开：finally 里补写日志
+                raise
             except TraeError as exc:
                 last_error = exc
                 if not emitted and attempt == 0 and (exc.http_status == 401 or exc.code == 1001):
@@ -648,8 +668,32 @@ class ChatService:
                     provider_id=provider_id,
                     virtual_model=virtual_model,
                 )
+                logged = True
                 return
             finally:
                 self.accounts.release(sem)
+                # 兜底：客户端中途断开时正常路径的 _finalize 不会执行
+                if not logged and emitted:
+                    try:
+                        await self._finalize(
+                            request_id=request_id,
+                            api_key=api_key,
+                            account=account,
+                            endpoint=endpoint,
+                            model=body_model,
+                            caps=body_caps,
+                            stream=True,
+                            usage=usage_snapshot,
+                            started=started,
+                            ip=ip,
+                            credits_before=credits_before_snapshot,
+                            provider_id=provider_id,
+                            virtual_model=virtual_model,
+                            status="cancelled",
+                            error="客户端提前断开",
+                            ttft_ms=int((first_token_at - started) * 1000) if first_token_at else 0,
+                        )
+                    except BaseException:
+                        pass
         if last_error:
             yield self._error_frame(str(last_error), "upstream_error")
