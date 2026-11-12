@@ -2829,6 +2829,7 @@ def test_api_key_page_and_actions(app_client):
 
 
 def test_platform_card_trae_buttons_are_merged(app_client):
+    """Trae 卡片不再单列登录按钮，统一走「+ 添加账号」跳转平台登录页。"""
     app, client = app_client
     client.post(
         "/admin/login",
@@ -2838,12 +2839,12 @@ def test_platform_card_trae_buttons_are_merged(app_client):
     page = client.get("/admin/platforms")
     assert page.status_code == 200
     text = page.text
-    assert text.count('href="/admin/platforms/trae/login?region=cn"') == 1
-    assert text.count('href="/admin/platforms/trae/login?region=global"') == 1
-    assert "添加 Trae 国内版账号" in text
-    assert "Cookie 登录国际版" in text
+    assert "添加 Trae 国内版账号" not in text
+    assert "Cookie 登录国际版" not in text
     assert "获取 Token" not in text
     assert ">登录 Trae<" not in text
+    # 统一入口：卡片上的「+ 添加账号」链到平台详情/登录页
+    assert 'href="/admin/platforms/trae-cn"' in text
 
 
 def test_platform_disable_reason_recorded_and_displayed(app_client):
@@ -3448,9 +3449,10 @@ def test_platform_test_button_on_card(app_client):
     )
     page = client.get("/admin/platforms")
     assert page.status_code == 200
-    for pid in ("trae-cn", "trae-global", "workbuddy", "codebuddy", "lobster", "qoder-cn"):
+    # 测试按钮位于「对话」板块右上角；封存平台（trae-global / qoder-global）不显示
+    for pid in ("trae-cn", "workbuddy", "codebuddy", "lobster", "qoder-cn"):
         assert f'action="/admin/platforms/{pid}/test"' in page.text, pid
-    assert page.text.count("js-test") >= 6
+    assert page.text.count("js-test") >= 5
 
 
 def test_platform_test_endpoint_ok_and_failure(app_client, monkeypatch):
