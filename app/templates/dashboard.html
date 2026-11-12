@@ -93,51 +93,45 @@
   </div>
 </section>
 
-<section class="grid-2">
-  <div class="panel">
-    <div class="panel-head">
-      <div><h2>近 7 天用量</h2><p>Token 总量与请求趋势</p></div>
-      <span class="pill">累计 {{ fmt_num(snapshot.total_tokens) }} tokens</span>
-    </div>
-    <div class="chart">
-      {% for s in series %}
-      <div class="chart-col" title="{{ s.day }} · {{ s.requests }} 次 · {{ s.tokens }} tokens">
-        <div class="chart-bar-wrap">
-          <div class="chart-bar" style="height: {{ [((s.tokens / max_tokens) * 100)|round(1), 2]|max }}%"></div>
-        </div>
-        <div class="chart-day">{{ s.day[5:] }}</div>
-        <div class="chart-val">{{ fmt_num(s.tokens) }}</div>
-      </div>
-      {% endfor %}
+<!-- 用量统计 -->
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>用量统计</h2><p>请求、Token、缓存、延迟与平台占比</p></div>
+    <div class="row-actions" id="stats-range">
+      <button type="button" class="mini-btn" data-days="7">7 天</button>
+      <button type="button" class="mini-btn" data-days="14">14 天</button>
+      <button type="button" class="mini-btn primary" data-days="30">30 天</button>
     </div>
   </div>
+  <div class="stat-grid" style="margin-bottom:14px">
+    <div class="stat-card"><div class="stat-label">总请求</div><div class="stat-value" id="sum-requests">—</div></div>
+    <div class="stat-card"><div class="stat-label">总 Token</div><div class="stat-value" id="sum-tokens">—</div></div>
+    <div class="stat-card"><div class="stat-label">缓存命中 Token</div><div class="stat-value" id="sum-cached">—</div></div>
+    <div class="stat-card"><div class="stat-label">推理 Token</div><div class="stat-value" id="sum-reasoning">—</div></div>
+    <div class="stat-card"><div class="stat-label">平均延迟</div><div class="stat-value" id="sum-latency">—</div></div>
+  </div>
+  <div id="usage-chart-wrap" style="position:relative">
+    <svg id="usage-chart" viewBox="0 0 900 260" preserveAspectRatio="none" style="width:100%;height:260px;display:block"></svg>
+    <div id="usage-empty" hidden style="padding:40px;text-align:center;color:#9aa1ab;font-size:13px">该时间范围内暂无请求记录</div>
+  </div>
+  <div style="display:flex;gap:24px;margin-top:14px;flex-wrap:wrap">
+    <div style="flex:1;min-width:280px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">平台占比（Token）</div>
+      <div id="provider-bars" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+    <div style="flex:1;min-width:280px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">模型 Top（Token）</div>
+      <div id="model-bars" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+  </div>
+</section>
 
+<section class="grid-2">
   <div class="panel">
     <div class="panel-head">
       <div><h2>快速接入</h2><p>兼容 OpenAI SDK / Chatbox / Cherry Studio</p></div>
       <span class="badge success">运行中</span>
     </div>
-    <div class="connect-list">
-      <div class="connect-row">
-        <span>Base URL</span>
-        <code id="baseUrl">{{ base_url }}/v1</code>
-        <button class="copy-btn" data-copy="{{ base_url }}/v1">复制</button>
-      </div>
-      <div class="connect-row">
-        <span>API Key</span>
-        <code id="apiKey">{{ api_key.plaintext if api_key else '请在设置中生成' }}</code>
-        <button class="copy-btn" data-copy="{{ api_key.plaintext if api_key else '' }}">复制</button>
-      </div>
-      <div class="connect-row">
-        <span>默认模型</span>
-        <code>{{ default_model }}</code>
-        <a class="copy-btn" href="/admin/settings">修改</a>
-      </div>
-    </div>
-    <div class="code-block">curl {{ base_url }}/v1/chat/completions \
-  -H "Authorization: Bearer {{ api_key.plaintext if api_key else 'sk-trae-...' }}" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"{{ virtuals[0].name if virtuals else default_model }}","messages":[{"role":"user","content":"你好"}]}'</div>
   </div>
 </section>
 
@@ -194,4 +188,145 @@
     {% endif %}
   </div>
 </section>
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var COLORS = ['#2563eb','#16a34a','#ea580c','#7c3aed','#0891b2','#db2777','#ca8a04','#4b5563'];
+  var currentDays = 30;
+
+  function fmtNum(n) {
+    n = Number(n) || 0;
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(Math.round(n));
+  }
+  function el(tag, attrs) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  function drawChart(daily) {
+    var svg = document.getElementById('usage-chart');
+    var empty = document.getElementById('usage-empty');
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    if (!daily || !daily.length) {
+      svg.style.display = 'none';
+      empty.hidden = false;
+      return;
+    }
+    svg.style.display = 'block';
+    empty.hidden = true;
+
+    var W = 900, H = 260;
+    var padL = 54, padR = 16, padT = 16, padB = 34;
+    var innerW = W - padL - padR, innerH = H - padT - padB;
+    var maxTok = Math.max.apply(null, daily.map(function (d) { return Number(d.tokens) || 0; })) || 1;
+
+    // 水平网格 + Y 轴刻度
+    for (var g = 0; g <= 4; g++) {
+      var y = padT + innerH * g / 4;
+      svg.appendChild(el('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: '#e5e8ee', 'stroke-width': 1 }));
+      var t = el('text', { x: padL - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#9aa1ab' });
+      t.textContent = fmtNum(maxTok * (4 - g) / 4);
+      svg.appendChild(t);
+    }
+
+    // 面积 + 折线
+    var stepX = daily.length > 1 ? innerW / (daily.length - 1) : 0;
+    var pts = daily.map(function (d, i) {
+      var v = Number(d.tokens) || 0;
+      return [padL + stepX * i, padT + innerH - (v / maxTok) * innerH];
+    });
+
+    var areaD = 'M' + pts[0][0] + ',' + (padT + innerH);
+    pts.forEach(function (pt) { areaD += ' L' + pt[0] + ',' + pt[1]; });
+    areaD += ' L' + pts[pts.length - 1][0] + ',' + (padT + innerH) + ' Z';
+    svg.appendChild(el('path', { d: areaD, fill: 'rgba(37,99,235,.10)' }));
+
+    var lineD = pts.map(function (pt, i) { return (i ? 'L' : 'M') + pt[0] + ',' + pt[1]; }).join(' ');
+    svg.appendChild(el('path', { d: lineD, fill: 'none', stroke: '#2563eb', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+
+    // 数据点 + X 轴标签（按密度抽稀）
+    var labelStep = Math.ceil(daily.length / 10);
+    daily.forEach(function (d, i) {
+      var pt = pts[i];
+      var c = el('circle', { cx: pt[0], cy: pt[1], r: 3, fill: '#fff', stroke: '#2563eb', 'stroke-width': 2 });
+      var title = el('title');
+      title.textContent = d.day + '  ' + fmtNum(d.tokens) + ' tokens / ' + d.requests + ' 次';
+      c.appendChild(title);
+      svg.appendChild(c);
+
+      if (i % labelStep === 0 || i === daily.length - 1) {
+        var tx = el('text', { x: pt[0], y: H - 12, 'text-anchor': 'middle', 'font-size': 10, fill: '#9aa1ab' });
+        tx.textContent = d.day;
+        svg.appendChild(tx);
+      }
+    });
+  }
+
+  function drawBars(containerId, rows, keyName) {
+    var box = document.getElementById(containerId);
+    box.innerHTML = '';
+    if (!rows || !rows.length) {
+      box.innerHTML = '<div style="font-size:12px;color:#9aa1ab">暂无数据</div>';
+      return;
+    }
+    var max = Math.max.apply(null, rows.map(function (r) { return Number(r.tokens) || 0; })) || 1;
+    rows.slice(0, 8).forEach(function (r, i) {
+      var pct = (Number(r.tokens) || 0) / max * 100;
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px';
+      wrap.innerHTML =
+        '<span style="width:96px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#4b5563" title="' + r[keyName] + '">' +
+          (r[keyName] || '—') + '</span>' +
+        '<span style="flex:1;height:8px;background:#eef1f5;border-radius:4px;overflow:hidden">' +
+          '<span style="display:block;height:100%;width:' + pct.toFixed(1) + '%;background:' + COLORS[i % COLORS.length] + ';border-radius:4px"></span>' +
+        '</span>' +
+        '<span style="width:56px;text-align:right;flex-shrink:0;color:#6b7280">' + fmtNum(r.tokens) + '</span>';
+      box.appendChild(wrap);
+    });
+  }
+
+  function loadStats(days) {
+    currentDays = days;
+    document.querySelectorAll('#stats-range button').forEach(function (b) {
+      b.classList.toggle('primary', Number(b.dataset.days) === days);
+    });
+    fetch("/admin/api/usage-stats?days=" + days, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var daily = data.daily || [];
+        var sumReq = 0, sumTok = 0, sumCache = 0, sumReason = 0, latW = 0, latN = 0;
+        daily.forEach(function (d) {
+          sumReq += d.requests || 0;
+          sumTok += d.tokens || 0;
+          sumCache += d.cached || 0;
+          sumReason += d.reasoning || 0;
+          if (d.avg_latency > 0) { latW += d.avg_latency * (d.requests || 1); latN += (d.requests || 1); }
+        });
+        document.getElementById('sum-requests').textContent = sumReq.toLocaleString();
+        document.getElementById('sum-tokens').textContent = fmtNum(sumTok);
+        document.getElementById('sum-cached').textContent = fmtNum(sumCache);
+        document.getElementById('sum-reasoning').textContent = fmtNum(sumReason);
+        document.getElementById('sum-latency').textContent = latN ? Math.round(latW / latN) + ' ms' : '—';
+
+        drawChart(daily);
+        drawBars('provider-bars', data.by_provider, 'provider_id');
+        drawBars('model-bars', data.by_model, 'model');
+      })
+      .catch(function (e) {
+        console.warn('usage stats failed', e);
+        document.getElementById('usage-empty').hidden = false;
+      });
+  }
+
+  document.querySelectorAll('#stats-range button').forEach(function (b) {
+    b.addEventListener('click', function () { loadStats(Number(b.dataset.days)); });
+  });
+  loadStats(30);
+})();
+</script>
 {% endblock %}
