@@ -3836,23 +3836,23 @@ def test_lobster_activity_params_match_client_protocol():
 
 
 def test_workbuddy_common_headers_carry_version_and_platform():
-    """WorkBuddy / CodeBuddy 公共头必须带 clientVersion 与 platform。"""
+    """WorkBuddy / CodeBuddy 公共头必须带 X-Client-Version 与 platform。"""
     from app.providers.workbuddy import DESKTOP_CN, DESKTOP_GLOBAL, WorkBuddyProvider
 
     provider = WorkBuddyProvider.__new__(WorkBuddyProvider)
 
     cn = provider._common({"id": "codebuddy", "region": "cn", "config": {}})
-    assert cn["clientVersion"] == DESKTOP_CN
+    assert cn["X-Client-Version"] == DESKTOP_CN
     assert cn["platform"] == "win32"
 
     gl = provider._common({"id": "workbuddy", "region": "global", "config": {}})
-    assert gl["clientVersion"] == DESKTOP_GLOBAL
+    assert gl["X-Client-Version"] == DESKTOP_GLOBAL
     assert gl["platform"] == "win32"
 
     custom = provider._common(
         {"id": "workbuddy", "region": "global", "config": {"client_version": "9.9.9", "platform": "darwin"}}
     )
-    assert custom["clientVersion"] == "9.9.9"
+    assert custom["X-Client-Version"] == "9.9.9"
     assert custom["platform"] == "darwin"
 
 
@@ -3890,3 +3890,29 @@ def test_trae_ide_headers_match_desktop_client_shape():
     assert headers["X-Ide-Token"] == "tok"
     assert headers["x-device-id"] == "dev"
     assert headers["x-machine-id"] == "mid"
+
+
+def test_workbuddy_channel_approval_header_is_x_client_version():
+    """WorkBuddy 渠道校验（code=11128）要求 X-Client-Version，不是 clientVersion。
+
+    真实桌面客户端 main/http2.js:
+        withClientVersionHeader(...) => headers["X-Client-Version"] = app.getVersion()
+    缺失或写成小写 clientVersion 都会被判为「unapproved channel」。
+    """
+    from app.providers.workbuddy import DESKTOP_CN, DESKTOP_GLOBAL, WorkBuddyProvider
+
+    provider = WorkBuddyProvider.__new__(WorkBuddyProvider)
+
+    cn = provider._common({"id": "codebuddy", "region": "cn", "config": {}})
+    gl = provider._common({"id": "workbuddy", "region": "global", "config": {}})
+
+    for headers in (cn, gl):
+        assert "X-Client-Version" in headers
+        assert "clientVersion" not in headers
+        assert headers["platform"]
+
+    assert cn["X-Client-Version"] == DESKTOP_CN
+    assert gl["X-Client-Version"] == DESKTOP_GLOBAL
+    # 版本必须与本地安装包一致，否则同样触发渠道校验失败
+    assert DESKTOP_GLOBAL == "5.9.3"
+    assert DESKTOP_CN == "1.106.1"
