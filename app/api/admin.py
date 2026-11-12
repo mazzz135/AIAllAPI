@@ -68,8 +68,35 @@ def _fmt_money(value: Any) -> str:
     return f"${number:,.2f}"
 
 
+def _fmt_ago(value: Any) -> str:
+    """把时间戳渲染成「2 分钟前」这类相对时间。"""
+    try:
+        ts = int(value)
+    except Exception:
+        return "—"
+    if ts <= 0:
+        return "无"
+    delta = int(time.time()) - ts
+    if delta < 0:
+        return "刚刚"
+    if delta < 60:
+        return f"{delta} 秒前"
+    if delta < 3600:
+        return f"{delta // 60} 分钟前"
+    if delta < 86400:
+        return f"{delta // 3600} 小时前"
+    if delta < 86400 * 30:
+        return f"{delta // 86400} 天前"
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+
 templates.env.globals.update(
-    fmt_ts=_fmt_ts, fmt_num=_fmt_num, fmt_credits=_fmt_credits, fmt_money=_fmt_money
+    fmt_ts=_fmt_ts,
+    fmt_num=_fmt_num,
+    fmt_credits=_fmt_credits,
+    fmt_money=_fmt_money,
+    fmt_ago=_fmt_ago,
+    fmt_tokens=_fmt_num,
 )
 
 
@@ -665,6 +692,69 @@ async def platforms_page(request: Request, admin: dict = Depends(require_admin))
     for provider in platforms:
         for account in provider.get("accounts") or []:
             account["credit_unit"] = unit_of(account.get("packs"))
+    
+    # 补充平台统计：失效数量、对话统计、Token/缓存命中率等
+    from ..services.stats import StatsService, _today_start
+    stats_svc = StatsService(ctx.db, ctx.accounts, ctx.providers, ctx.pool, ctx.virtuals)
+    for provider in platforms:
+        p_stats = stats_svc.platform_stats(provider)
+        provider["stats"] = p_stats
+        # 失效数量 = enabled=0 OR cooldown_until > now
+        accounts = provider.get("accounts") or []
+        disabled_or_cooling = [
+            a for a in accounts
+            if not a.get("enabled") or int(a.get("cooldown_until") or 0) > int(time.time())
+        ]
+        provider["failed_count"] = len(disabled_or_cooling)
+
+        # 对话统计（今日/本周/本月）—— 注意 sqlite3.Row 没有 .get()，统一转 dict
+        today_start = _today_start()
+        week_start = today_start - 7 * 86400
+        month_start = today_start - 30 * 86400
+
+        usage_rows = [
+            dict(r)
+            for r in ctx.db.query(
+                "SELECT created_at, total_tokens, cache_read_tokens, cache_miss_tokens "
+                "FROM usage_logs WHERE provider_id=? AND status='ok'",
+                (provider["id"],),
+            )
+        ]
+
+        def _ts(row: dict) -> int:
+            try:
+                return int(row.get("created_at") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        today_reqs = sum(1 for r in usage_rows if _ts(r) >= today_start)
+        week_reqs = sum(1 for r in usage_rows if _ts(r) >= week_start)
+        month_reqs = sum(1 for r in usage_rows if _ts(r) >= month_start)
+
+        def _tok(row: dict) -> int:
+            try:
+                return int(row.get("total_tokens") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        today_tokens = sum(_tok(r) for r in usage_rows if _ts(r) >= today_start)
+        week_tokens = sum(_tok(r) for r in usage_rows if _ts(r) >= week_start)
+        month_tokens = sum(_tok(r) for r in usage_rows if _ts(r) >= month_start)
+
+        cache_hits = sum(int(r.get("cache_read_tokens") or 0) for r in usage_rows)
+        cache_misses = sum(int(r.get("cache_miss_tokens") or 0) for r in usage_rows)
+        total_cache = cache_hits + cache_misses
+        cache_hit_rate = round(cache_hits / total_cache * 100, 1) if total_cache > 0 else 0.0
+
+        p_stats["today_requests"] = today_reqs
+        p_stats["week_requests"] = week_reqs
+        p_stats["month_requests"] = month_reqs
+        p_stats["today_tokens"] = today_tokens
+        p_stats["week_tokens"] = week_tokens
+        p_stats["month_tokens"] = month_tokens
+        p_stats["cache_hit_rate"] = cache_hit_rate
+        p_stats["last_activity"] = max((_ts(r) for r in usage_rows), default=0)
+    
     return _render(
         request,
         "platforms.html",
