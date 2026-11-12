@@ -769,6 +769,74 @@ async def platforms_page(request: Request, admin: dict = Depends(require_admin))
     )
 
 
+# --------------------------------------------------------------------- 用量统计
+@router.get("/platforms/usage-stats")
+async def platforms_usage_stats(request: Request, days: int = 14, admin: dict = Depends(require_admin)):
+    """平台聚合页用量统计：按天 token/请求/成本趋势 + 按平台 + 按模型 Top。"""
+    ctx = state(request)
+    days = max(1, min(int(days or 14), 90))
+    start_ts = int(time.time()) - days * 86400
+
+    daily = [
+        dict(r)
+        for r in ctx.db.query(
+            "SELECT strftime('%m-%d', datetime(created_at, 'unixepoch', 'localtime')) AS day,"
+            "       COUNT(*) AS requests,"
+            "       COALESCE(SUM(total_tokens), 0) AS tokens,"
+            "       COALESCE(SUM(cached_tokens), 0) AS cached,"
+            "       COALESCE(SUM(reasoning_tokens), 0) AS reasoning,"
+            "       COALESCE(AVG(NULLIF(latency_ms, 0)), 0) AS avg_latency"
+            " FROM usage_logs WHERE created_at>=?"
+            " GROUP BY day ORDER BY MIN(created_at) ASC",
+            (start_ts,),
+        )
+    ]
+
+    def _agg(rows, key: str) -> list[dict[str, Any]]:
+        return [
+            {
+                key: r["k"] or "",
+                "requests": int(r["requests"] or 0),
+                "tokens": int(r["tokens"] or 0),
+                "cached": int(r["cached"] or 0),
+                "reasoning": int(r["reasoning"] or 0),
+                "avg_latency": round(float(r["avg_latency"] or 0), 1),
+            }
+            for r in rows
+        ]
+
+    by_provider = _agg(
+        ctx.db.query(
+            "SELECT provider_id AS k, COUNT(*) AS requests,"
+            " COALESCE(SUM(total_tokens),0) AS tokens,"
+            " COALESCE(SUM(cached_tokens),0) AS cached,"
+            " COALESCE(SUM(reasoning_tokens),0) AS reasoning,"
+            " COALESCE(AVG(NULLIF(latency_ms,0)),0) AS avg_latency"
+            " FROM usage_logs WHERE created_at>=? GROUP BY provider_id ORDER BY tokens DESC",
+            (start_ts,),
+        ),
+        "provider_id",
+    )
+    by_model = _agg(
+        ctx.db.query(
+            "SELECT model AS k, COUNT(*) AS requests,"
+            " COALESCE(SUM(total_tokens),0) AS tokens,"
+            " COALESCE(SUM(cached_tokens),0) AS cached,"
+            " COALESCE(SUM(reasoning_tokens),0) AS reasoning,"
+            " COALESCE(AVG(NULLIF(latency_ms,0)),0) AS avg_latency"
+            " FROM usage_logs WHERE created_at>=? GROUP BY model ORDER BY tokens DESC LIMIT 12",
+            (start_ts,),
+        ),
+        "model",
+    )
+    return JSONResponse({
+        "days": days,
+        "daily": daily,
+        "by_provider": by_provider,
+        "by_model": by_model,
+    }    )
+
+
 @router.get("/platforms/{provider_id}", response_class=HTMLResponse)
 async def platform_detail(request: Request, provider_id: str, admin: dict = Depends(require_admin)):
     ctx = state(request)
