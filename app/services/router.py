@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from typing import Any, AsyncIterator, Optional
@@ -18,6 +19,8 @@ from .pool import AccountPool
 from .providers import ProviderService
 from .usage import UsageService
 from .virtuals import VirtualService
+
+log = logging.getLogger("aiall.router")
 
 
 class RouterService:
@@ -468,6 +471,11 @@ class RouterService:
         for account in accounts:
             usage = empty_usage()
             self.pool.acquire(int(account["id"]))
+            # 无论正常结束、异常还是客户端提前断开（生成器被 aclose/GC）
+            # 都必须落一条日志，否则后台看不到「跑通了但无记录」的调用。
+            logged = False
+            status = "ok"
+            err_text = ""
             try:
                 if adapter is not None:
                     gen = adapter.chat_stream(provider, account, body)
@@ -495,7 +503,13 @@ class RouterService:
                     api_key, provider, account, model, virtual_model, endpoint, True, usage, started, ip, "ok", "",
                     ttft_ms=int((first_token_at - started) * 1000) if first_token_at else 0,
                 )
+                logged = True
                 return
+            except GeneratorExit:
+                # 客户端中途断开：仍要记录已产生的用量，标记为 cancelled。
+                status = "cancelled"
+                err_text = "客户端提前断开"
+                raise
             except StopAsyncIteration:
                 # 上游 200 但一个 chunk 都没产出（空流 / 全是不可解析帧）。
                 # 旧实现只 continue，导致 last=None、日志退化成「全部账号失败」，
@@ -521,6 +535,17 @@ class RouterService:
                     break
             finally:
                 self.pool.release(int(account["id"]))
+                # 兜底：正常路径已在上面写过日志；客户端提前断开（GeneratorExit）等情况在此补写。
+                if not logged:
+                    try:
+                        self._log_custom(
+                            api_key, provider, account, model, virtual_model, endpoint, True, usage,
+                            started, ip, status, err_text,
+                            ttft_ms=int((first_token_at - started) * 1000) if first_token_at else 0,
+                        )
+                        logged = True
+                    except Exception:
+                        log.exception("stream usage log failed")
         error_text = str(last or "全部账号失败")
         self._log_custom(
             api_key, provider, accounts[0], model, virtual_model, endpoint, True, {}, started, ip, "error",
