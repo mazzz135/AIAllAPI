@@ -176,7 +176,8 @@ class RouterService:
         route = self.resolve(payload, headers or {}, query or {})
         session_key = self.pool.session_key(payload, headers or {})
         if route["type"] == "virtual":
-            return await self._complete_virtual(route, payload, api_key, ip, endpoint, session_key)
+            result = await self._complete_virtual(route, payload, api_key, ip, endpoint, session_key)
+            return self._rewrite_response_model(result, route["virtual_model"])
         return await self._complete_provider(
             route["provider_id"],
             route["model"],
@@ -377,8 +378,9 @@ class RouterService:
         route = self.resolve(payload, headers or {}, query or {})
         session_key = self.pool.session_key(payload, headers or {})
         if route["type"] == "virtual":
+            group_name = route["virtual_model"]
             async for chunk in self._stream_virtual(route, payload, api_key, ip, endpoint, session_key):
-                yield chunk
+                yield self._rewrite_stream_model(chunk, group_name)
             return
         async for chunk in self._stream_provider(
             route["provider_id"],
@@ -516,6 +518,44 @@ class RouterService:
         yield self._error_frame(str(last or "全部账号失败"), "provider_failed")
 
     # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def _rewrite_response_model(result: dict[str, Any], group_name: str) -> dict[str, Any]:
+        """虚拟组统一对外模型名；只改响应，日志仍记录真实上游模型。"""
+        if group_name and isinstance(result, dict) and isinstance(result.get("model"), str):
+            if result["model"] != group_name:
+                return {**result, "model": group_name}
+        return result
+
+    @staticmethod
+    def _rewrite_stream_model(chunk: str, group_name: str) -> str:
+        """逐 SSE chunk 改写 data 行的 model；[DONE]、错误帧、非 JSON 行原样透传。"""
+        if not group_name or not chunk or "data:" not in chunk:
+            return chunk
+        out: list[str] = []
+        changed = False
+        for line in chunk.splitlines(keepends=True):
+            body = line.rstrip("\r\n")
+            newline = line[len(body) :]
+            lead = body[: len(body) - len(body.lstrip())]
+            data_line = body.lstrip()
+            if data_line.startswith("data:"):
+                raw = data_line[5:].strip()
+                if raw and raw != "[DONE]":
+                    try:
+                        data = json.loads(raw)
+                    except (ValueError, TypeError):
+                        out.append(line)
+                        continue
+                    if isinstance(data, dict) and isinstance(data.get("model"), str) and data["model"] != group_name:
+                        data["model"] = group_name
+                        out.append(
+                            lead + "data: " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + newline
+                        )
+                        changed = True
+                        continue
+            out.append(line)
+        return "".join(out) if changed else chunk
+
     @staticmethod
     def _error_frame(message: str, code: str) -> str:
         payload = {"error": {"message": message, "type": "api_error", "code": code}}

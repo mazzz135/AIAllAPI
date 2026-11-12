@@ -1031,6 +1031,141 @@ def test_virtual_group_routes_to_platform(app_client):
     assert seen["path"] == "/v2/chat/completions"
     assert seen["auth"] == "Bearer tok"
     assert seen["model"] == "deepseek-v4.1-flash"
+    assert response.json()["model"] == "fast"
+
+
+def test_virtual_group_rewrites_response_model_but_not_direct(app_client):
+    """虚拟组对外统一组名，日志仍记录真实上游模型；直连真实名不改写。"""
+    app, client = app_client
+    ctx = app.state.ctx
+    import httpx
+
+    ctx.providers.add_credential_account(
+        "workbuddy",
+        "wb-model",
+        {"access_token": "tok", "refresh_token": "ref", "expires_at": 9999999999, "uid": "u-model"},
+        uid="u-model",
+    )
+    group_id = ctx.virtuals.create("alias", "Alias")
+    ctx.virtuals.add_member(group_id, "workbuddy", "deepseek-v4.1-flash", 1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        frame = {
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "deepseek-v4.1-flash",
+            "choices": [{"index": 0, "delta": {"content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        content = "data: " + json.dumps(frame) + "\n\ndata: [DONE]\n\n"
+        return httpx.Response(200, content=content.encode(), headers={"content-type": "text/event-stream"})
+
+    ctx.providers.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    key = ctx.box.decrypt(ctx.db.query_one("SELECT key_encrypted FROM api_keys")["key_encrypted"])
+    auth = {"Authorization": "Bearer " + key}
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=auth,
+        json={"model": "alias", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["model"] == "alias"
+    row = ctx.db.query_one("SELECT model, virtual_model FROM usage_logs ORDER BY id DESC LIMIT 1")
+    assert row["model"] == "deepseek-v4.1-flash"
+    assert row["virtual_model"] == "alias"
+
+    responses = client.post(
+        "/v1/responses",
+        headers=auth,
+        json={"model": "alias", "input": "hi"},
+    )
+    assert responses.status_code == 200, responses.text
+    assert responses.json()["model"] == "alias"
+
+    direct = client.post(
+        "/v1/chat/completions",
+        headers={**auth, "X-AIALl-Provider": "workbuddy"},
+        json={"model": "deepseek-v4.1-flash", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert direct.status_code == 200, direct.text
+    assert direct.json()["model"] == "deepseek-v4.1-flash"
+
+
+def test_virtual_group_stream_rewrites_every_chunk(app_client):
+    """流式每个 data chunk 的 model 都改为组名，[DONE] 与内容不变。"""
+    app, client = app_client
+    ctx = app.state.ctx
+    import httpx
+
+    ctx.providers.add_credential_account(
+        "workbuddy",
+        "wb-stream",
+        {"access_token": "tok", "refresh_token": "ref", "expires_at": 9999999999, "uid": "u-stream"},
+        uid="u-stream",
+    )
+    group_id = ctx.virtuals.create("stream-alias", "Stream Alias")
+    ctx.virtuals.add_member(group_id, "workbuddy", "deepseek-v4.1-flash-sg", 1)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        frames = []
+        for text, finish in (("A", None), ("B", None), ("", "stop")):
+            frames.append(
+                {
+                    "id": "chatcmpl-s",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": "deepseek-v4.1-flash-sg",
+                    "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": finish}],
+                }
+            )
+        content = "".join("data: " + json.dumps(f) + "\n\n" for f in frames) + "data: [DONE]\n\n"
+        return httpx.Response(200, content=content.encode(), headers={"content-type": "text/event-stream"})
+
+    ctx.providers.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    key = ctx.box.decrypt(ctx.db.query_one("SELECT key_encrypted FROM api_keys")["key_encrypted"])
+    response = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer " + key},
+        json={"model": "stream-alias", "stream": True, "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.status_code == 200, response.text
+    models: list[str] = []
+    texts: list[str] = []
+    done = False
+    for line in response.text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        raw = line[5:].strip()
+        if raw == "[DONE]":
+            done = True
+            continue
+        data = json.loads(raw)
+        if "model" in data:
+            models.append(data["model"])
+        delta = (data.get("choices") or [{}])[0].get("delta") or {}
+        if delta.get("content"):
+            texts.append(delta["content"])
+    assert len(models) == 3 and set(models) == {"stream-alias"}
+    assert "".join(texts) == "AB"
+    assert done
+
+
+def test_rewrite_model_helpers_edge_cases():
+    from app.services.router import RouterService
+
+    assert RouterService._rewrite_response_model({"model": "real"}, "g")["model"] == "g"
+    assert RouterService._rewrite_response_model({}, "g") == {}
+    assert RouterService._rewrite_response_model({"model": "real"}, "")["model"] == "real"
+    assert RouterService._rewrite_stream_model("data: [DONE]\n\n", "g") == "data: [DONE]\n\n"
+    assert RouterService._rewrite_stream_model("event: ping\ndata: not-json\n\n", "g") == (
+        "event: ping\ndata: not-json\n\n"
+    )
+    out = RouterService._rewrite_stream_model('data: {"model":"real","choices":[]}\n\n', "g")
+    assert json.loads(out.split("data: ", 1)[1])["model"] == "g"
+    error = RouterService._error_frame("boom", "upstream_error")
+    assert RouterService._rewrite_stream_model(error, "g") == error
 
 
 def test_models_endpoint_only_lists_virtual_groups(app_client):
