@@ -3916,3 +3916,33 @@ def test_workbuddy_channel_approval_header_is_x_client_version():
     # 版本必须与本地安装包一致，否则同样触发渠道校验失败
     assert DESKTOP_GLOBAL == "5.9.3"
     assert DESKTOP_CN == "1.106.1"
+
+
+def test_mark_success_clears_last_error(app_client):
+    """mark_success() 必须清空 last_error，否则平台聚合页会一直显示历史报错。"""
+    app, _ = app_client
+    ctx = app.state.ctx
+
+    ctx.providers.add_credential_account(
+        "workbuddy",
+        "wb-err",
+        {"access_token": "tok", "refresh_token": "ref", "expires_at": 9999999999, "uid": "u-err"},
+        uid="u-err",
+    )
+    acc = [a for a in ctx.providers.accounts("workbuddy") if a.get("name") == "wb-err"][0]
+    aid = int(acc["id"])
+
+    ctx.db.execute(
+        "UPDATE provider_accounts SET last_error=? WHERE id=?",
+        ("WorkBuddy 上游 HTTP 400: illegal channel", aid),
+    )
+    assert ctx.db.query_one("SELECT last_error FROM provider_accounts WHERE id=?", (aid,))["last_error"]
+
+    ctx.pool.mark_success(aid, "workbuddy", "deepseek-v4.1-flash", -1, 0)
+
+    row = ctx.db.query_one(
+        "SELECT last_error, fail_streak, cooldown_until FROM provider_accounts WHERE id=?", (aid,)
+    )
+    assert row["last_error"] == ""
+    assert row["fail_streak"] == 0
+    assert row["cooldown_until"] == 0
