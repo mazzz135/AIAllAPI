@@ -57,7 +57,7 @@ def safe_compare(a: str, b: str) -> bool:
 
 def load_or_create_secret(settings: Settings) -> str:
     settings.ensure_dirs()
-    env_secret = (os.getenv("TRAEAPI_SECRET_KEY") or "").strip()
+    env_secret = (os.getenv("AIALL_SECRET_KEY") or os.getenv("TRAEAPI_SECRET_KEY") or "").strip()
     if env_secret:
         return env_secret
     path = settings.secret_path
