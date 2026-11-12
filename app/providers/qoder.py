@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import json
 import os
 import time
@@ -512,9 +513,12 @@ class QoderProvider:
             new_cred = dict(cred)
             new_cred["machine_token"] = sess["machine_token"]
             new_cred["cosy_session"] = sess
-            await self._credential_saver(
+            result = self._credential_saver(
                 int(account["id"]), new_cred, int(cred.get("expires_at") or 0)
             )
+            # 兼容同步 / 异步两种保存实现
+            if inspect.isawaitable(result):
+                await result
 
         return sess
 
