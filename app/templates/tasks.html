@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}任务设置{% endblock %}
+{% block page_title %}任务设置{% endblock %}
+{% block eyebrow %}TASKS{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>WorkBuddy 任务</h2><p>WorkBuddy / CodeBuddy 成长活动：签到、上报、领奖、兑换与抽奖接口</p></div>
+    <span class="pill">4 类任务</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>任务</th><th>接口</th><th>开关</th><th>执行时间</th><th>今日</th><th>最近结果</th><th>明细</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for t in tasks %}
+        <tr>
+          <td><strong>{{ t.label }}</strong><div class="muted small">{{ t.desc }}</div></td>
+          <td class="muted small mono">{{ t.endpoints }}</td>
+          <td>
+            <span class="badge {{ 'success' if t.enabled else 'muted' }}">{{ '已开启' if t.enabled else '已关闭' }}</span>
+          </td>
+          <td class="mono">{{ t.time }}</td>
+          <td class="muted small">{{ '已执行' if t.today_run else '未执行' }}</td>
+          <td>
+            {% if t.last %}
+            <span class="badge {{ 'success' if t.last.success else ('danger' if t.last.failed else 'muted') }}">
+              {{ t.last.success }}/{{ t.last.total }}
+            </span>
+            <div class="muted small">{{ fmt_ts(t.last.finished_at) }} · {{ t.last.source or 'schedule' }}</div>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="task-details">
+            {% if t.last and t.last.details %}
+            <details>
+              <summary>{{ t.last.details|length }} 条</summary>
+              <table class="table compact mini-table">
+                <thead><tr><th>账号</th><th>结果</th><th>说明</th></tr></thead>
+                <tbody>
+                {% for d in t.last.details[:20] %}
+                  <tr>
+                    <td>{{ d.account }}</td>
+                    <td><span class="badge {{ 'success' if d.status in ('success','already') else ('danger' if d.status in ('failed','error') else 'muted') }}">{{ d.status }}</span></td>
+                    <td class="muted small">{{ d.message }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </details>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="right">
+            <form method="post" action="/admin/tasks/{{ t.name }}/run" class="inline-form" data-confirm="立即执行「{{ t.label }}」？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input type="hidden" name="redirect" value="/admin/tasks">
+              <button class="mini-btn primary" type="submit">立即执行</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">四类任务均只对 WorkBuddy / CodeBuddy 国内版账号生效，国际版账号自动跳过；活动未开放或今日已做完时记录为跳过，不报错。</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>任务开关与时间</h2><p>每类任务独立开关、独立时间，互不影响</p></div>
+  </div>
+  <form method="post" action="/admin/tasks/settings" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="form-grid">
+      <label>活跃地图任务
+        <select name="activity_enabled">
+          <option value="1" {{ 'selected' if settings.get('schedule.activity_enabled', '0') == '1' else '' }}>开启</option>
+          <option value="0" {{ 'selected' if settings.get('schedule.activity_enabled', '0') != '1' else '' }}>关闭</option>
+        </select>
+      </label>
+      <label>活跃地图时间
+        <input name="activity_time" type="time" value="{{ settings.get('schedule.activity_time', '10:00') }}">
+      </label>
+      <label>猫猫旅行任务
+        <select name="travel_enabled">
+          <option value="1" {{ 'selected' if settings.get('schedule.travel_enabled', '0') == '1' else '' }}>开启</option>
+          <option value="0" {{ 'selected' if settings.get('schedule.travel_enabled', '0') != '1' else '' }}>关闭</option>
+        </select>
+      </label>
+      <label>猫猫旅行时间
+        <input name="travel_time" type="time" value="{{ settings.get('schedule.travel_time', '09:00') }}">
+      </label>
+      <label>开学季任务
+        <select name="school_enabled">
+          <option value="1" {{ 'selected' if settings.get('schedule.school_enabled', '0') == '1' else '' }}>开启</option>
+          <option value="0" {{ 'selected' if settings.get('schedule.school_enabled', '0') != '1' else '' }}>关闭</option>
+        </select>
+      </label>
+      <label>开学季时间
+        <input name="school_time" type="time" value="{{ settings.get('schedule.school_time', '12:00') }}">
+      </label>
+      <label>夜猫子任务
+        <select name="cat_enabled">
+          <option value="1" {{ 'selected' if settings.get('schedule.cat_enabled', '0') == '1' else '' }}>开启</option>
+          <option value="0" {{ 'selected' if settings.get('schedule.cat_enabled', '0') != '1' else '' }}>关闭</option>
+        </select>
+      </label>
+      <label>夜猫子时间
+        <input name="cat_time" type="time" value="{{ settings.get('schedule.cat_time', '01:00') }}">
+      </label>
+    </div>
+    <div><button class="btn btn-primary" type="submit">保存任务开关与时间</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>任务调度</h2><p>确定性抖动、当日全灭自动重试与执行台账</p></div>
+  </div>
+  <form method="post" action="/admin/tasks/schedule" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="form-grid">
+      <label>触发抖动（分钟，0=精确整点）
+        <input name="schedule_jitter_minutes" type="number" min="0" max="120" value="{{ settings.get('schedule.jitter_minutes', '0') }}">
+      </label>
+      <label>失败重试延迟（分钟，0=关闭）
+        <input name="schedule_retry_delay_minutes" type="number" min="0" max="1440" value="{{ settings.get('schedule.retry_delay_minutes', '0') }}">
+      </label>
+      <label>每日最多重试次数
+        <input name="schedule_retry_max_per_day" type="number" min="0" max="10" value="{{ settings.get('schedule.retry_max_per_day', '1') }}">
+      </label>
+      <label>任务台账文件（留空只存数据库）
+        <input name="schedule_ledger_file" value="{{ settings.get('schedule.ledger_file', '') }}" placeholder="./data/task_ledger.jsonl">
+      </label>
+    </div>
+    <p class="hint">抖动偏移按「任务名 + 日期 + 小时」散列派生，同一天同一任务恒定；重试仅在一轮任务全部失败（成功与已做均为 0）时触发，人工触发不排重试。</p>
+    <div><button class="btn btn-primary" type="submit">保存调度设置</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>最近任务台账</h2><p>每轮任务的来源、耗时与成功 / 失败 / 跳过统计</p></div>
+    <span class="pill">最近 50 条</span>
+  </div>
+  {% if ledger %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>任务</th><th>来源</th><th>开始</th><th>结束</th><th>总数</th><th>成功</th><th>失败</th><th>跳过</th><th>明细</th><th>说明</th></tr></thead>
+      <tbody>
+      {% for r in ledger %}
+        <tr>
+          <td><strong>{{ task_labels.get(r.task, r.task) }}</strong></td>
+          <td><span class="badge {{ 'muted' if r.source == 'manual' else 'success' }}">{{ r.source or 'schedule' }}</span></td>
+          <td class="mono muted small">{{ fmt_ts(r.started_at) }}</td>
+          <td class="mono muted small">{{ fmt_ts(r.finished_at) }}</td>
+          <td class="mono">{{ r.total }}</td>
+          <td class="mono">{{ r.success }}</td>
+          <td class="mono">{{ r.failed }}</td>
+          <td class="mono">{{ r.skipped }}</td>
+          <td class="task-details">
+            {% if r.details %}
+            <details>
+              <summary>{{ r.details|length }} 条</summary>
+              <table class="table compact mini-table">
+                <thead><tr><th>账号</th><th>结果</th><th>说明</th></tr></thead>
+                <tbody>
+                {% for d in r.details[:20] %}
+                  <tr>
+                    <td>{{ d.account }}</td>
+                    <td><span class="badge {{ 'success' if d.status in ('success','already') else ('danger' if d.status in ('failed','error') else 'muted') }}">{{ d.status }}</span></td>
+                    <td class="muted small">{{ d.message }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </details>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="muted small">
+            {% if r.all_failed %}<span class="badge danger">全灭</span>{% endif %}
+            {{ r.message }}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">◷</div><h3>还没有任务执行记录</h3><p>开启任务开关，或在上面点击「立即执行」跑一次。</p></div>
+  {% endif %}
+</section>
+{% endblock %}

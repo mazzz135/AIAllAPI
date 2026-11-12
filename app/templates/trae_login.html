@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Trae 登录{% endblock %}
+{% block page_title %}Trae {{ '国际版' if region == 'global' else '国内版' }} 登录{% endblock %}
+{% block eyebrow %}TRAE LOGIN{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/trae/token?region={{ region }}">获取 Access Token</a>
+  <a class="btn btn-ghost" href="/admin/platforms">返回平台</a>
+{% endblock %}
+{% block content %}
+{% if msg %}<div class="flash {{ 'flash-ok' if ok == '1' else 'flash-err' }}">{{ msg }}</div>{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>第 1 步：打开官方授权页</h2><p>必须使用无痕窗口，并先在页面中登录 Trae 账号</p></div>
+    <span class="badge {{ 'success' if region == 'cn' else 'muted' }}">{{ '国内版' if region == 'cn' else '国际版' }}</span>
+  </div>
+  <div class="stack">
+    <label>授权链接
+      <textarea id="authUrl" rows="4" readonly>{{ login_url }}</textarea>
+    </label>
+    <div class="row-actions">
+      <button class="btn btn-primary" type="button" id="openBtn">打开授权页</button>
+      <button class="btn btn-ghost" type="button" id="copyBtn">复制链接</button>
+    </div>
+    <div class="callout">
+      <strong>为什么回调地址是 127.0.0.1？</strong>
+      <p>Trae 官方授权页只接受 <code>http://127.0.0.1:端口/authorize</code> 形式的回调，其他地址会直接显示“登录失败 / 网络错误”。</p>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>第 2 步：复制登录后的回调地址</h2><p>登录成功后浏览器会跳转到 <code>{{ callback_url }}</code>，页面可能打不开，这是正常的</p></div>
+  </div>
+  <div class="stack">
+    <ol class="hint" style="margin:0;padding-left:18px">
+      <li>在授权页完成 Trae 登录并点击授权</li>
+      <li>浏览器跳转到 <code>127.0.0.1</code> 地址，显示“无法访问此网站”</li>
+      <li>复制地址栏完整 URL（包含 <code>authCodeInfo</code> 或 <code>refreshToken</code>）</li>
+      <li>粘贴到下面并提交</li>
+    </ol>
+    <form method="post" action="/admin/platforms/trae/callback" class="stack">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="region" value="{{ region }}">
+      <label>回调地址
+        <textarea name="callback_url" rows="4" required placeholder="{{ callback_url }}?authCodeInfo=...&login_trace_id={{ trace_id }}"></textarea>
+      </label>
+      <div><button class="btn btn-primary" type="submit">解析并保存账号</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>备用方式</h2><p>如果拿不到回调地址，可直接粘贴 refreshToken</p></div></div>
+  <form method="post" action="/admin/accounts/add" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="mode" value="refresh">
+    <input type="hidden" name="region" value="{{ region }}">
+    <label>Refresh Token<input name="refresh_token" type="password" placeholder="粘贴 Trae refreshToken"></label>
+    <div><button class="btn btn-ghost" type="submit">保存 Refresh Token</button></div>
+  </form>
+</section>
+
+<script>
+(function () {
+  const input = document.getElementById('authUrl');
+  document.getElementById('openBtn').onclick = () => window.open(input.value, '_blank');
+  document.getElementById('copyBtn').onclick = async () => {
+    await navigator.clipboard.writeText(input.value);
+    document.getElementById('copyBtn').textContent = '已复制';
+  };
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}{{ provider.name }}{% endblock %}
+{% block page_title %}{{ provider.name }}{% endblock %}
+{% block eyebrow %}PLATFORM DETAIL{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/platforms">返回平台</a>
+  <form method="post" action="/admin/platforms/{{ provider.id }}/quota-all" class="inline-form js-refresh">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="btn btn-primary" type="submit">刷新全部积分</button>
+  </form>
+{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ provider.name }} <span class="badge {{ 'success' if provider.enabled else 'muted' }}">{{ '启用' if provider.enabled else '停用' }}</span></h2>
+      <p><code>{{ provider.id }}</code> · {{ provider.kind }} · {{ provider.region or '—' }} · {{ provider.base_url }}</p>
+    </div>
+    <div class="row-actions">
+      {% if provider.kind == 'trae' %}
+      <a class="mini-btn primary" href="/admin/platforms/trae/login?region={{ provider.region or 'cn' }}">添加 Trae 账号</a>
+      {% elif provider.kind in ('workbuddy', 'codebuddy', 'qoder', 'lobster') %}
+      <form method="post" action="/admin/platforms/{{ provider.id }}/login/start" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn primary" type="submit">添加账号</button>
+      </form>
+      {% endif %}
+      {% if provider.kind != 'trae' %}
+      <form method="post" action="/admin/platforms/{{ provider.id }}/sync" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit">同步模型</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">账号</div><div class="stat-value" data-stat="accounts">{{ accounts|length }}</div></div>
+    <div class="stat-card"><div class="stat-label">模型</div><div class="stat-value" data-stat="models">{{ models|length }}</div></div>
+    <div class="stat-card"><div class="stat-label">剩余积分</div><div class="stat-value" data-stat="remaining">{{ fmt_money(totals.remaining) if totals.unit == 'USD' else fmt_credits(totals.remaining) }}</div></div>
+    <div class="stat-card"><div class="stat-label">已用积分</div><div class="stat-value" data-stat="used">{{ fmt_money(totals.used) if totals.unit == 'USD' else fmt_credits(totals.used) }}</div></div>
+    <div class="stat-card"><div class="stat-label">总积分</div><div class="stat-value" data-stat="total">{{ fmt_money(totals.total) if totals.unit == 'USD' else fmt_credits(totals.total) }}</div></div>
+    <div class="stat-card"><div class="stat-label">快过期积分</div><div class="stat-value" data-stat="expiring">{{ fmt_money(totals.expiring) if totals.unit == 'USD' else fmt_credits(totals.expiring) }}</div></div>
+  </div>
+  {% if provider.last_error %}<div class="flash flash-err">{{ provider.last_error[:300] }}</div>{% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>账号列表</h2><p>剩余、已用、总积分；点击刷新积分获取最新数据</p></div><span class="pill" data-refresh-status hidden></span></div>
+  {% if accounts %}
+  {% if totals.total == 0 %}
+  <div class="callout warn" style="margin-bottom:12px">
+    <strong>额度为 0</strong>
+    <p>上游未返回可用额度：常见原因是账号为 Free 计划、额度已用尽，或尚未订阅/加购。可在「平台聚合」点「刷新积分」重试；若仍为 0，说明这是账号在上游的真实状态。</p>
+  </div>
+  {% endif %}
+  {% if totals.total == 0 %}
+  <div class="callout warn" style="margin-bottom:12px">
+    <strong>额度为 0</strong>
+    <p>上游未返回可用额度：常见原因是账号为 Free 计划、额度已用尽，或尚未订阅/加购。可在「平台聚合」点「刷新积分」重试；若仍为 0，说明这是账号在上游的真实状态。</p>
+  </div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>账号</th><th>UID</th><th>剩余</th><th>已用</th><th>总量</th><th>积分明细</th><th>状态</th><th>更新时间</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for a in accounts %}
+        <tr data-account-id="{{ a.id }}">
+          <td><strong>{{ a.name }}</strong><div class="muted small">#{{ a.id }} · {{ a.auth_type }}</div></td>
+          <td><code>{{ a.uid or '—' }}</code></td>
+          <td><strong data-field="credits" data-unit="{{ 'USD' if (a.packs and a.packs[0].unit == 'USD') else 'credits' }}">{{ fmt_money(a.credits) if (a.packs and a.packs[0].unit == 'USD') else fmt_credits(a.credits) }}</strong></td>
+          <td data-field="credits_used">{{ fmt_money(a.credits_used) if (a.packs and a.packs[0].unit == 'USD') else fmt_credits(a.credits_used) }}</td>
+          <td data-field="credits_total">{{ fmt_money(a.credits_total) if (a.packs and a.packs[0].unit == 'USD') else fmt_credits(a.credits_total) }}</td>
+          <td class="credit-packs">
+            {% if a.packs %}
+            <details>
+              <summary>{{ a.packs|length }} 个积分包</summary>
+              <ul>
+                {% for p in a.packs[:8] %}
+                <li>
+                  <span>{{ p.name }}</span>
+                  <strong>{{ '$' if p.unit == 'USD' else '' }}{{ fmt_credits(p.remain) }}</strong>
+                  {% if p.total %}<span class="muted">/ {{ '$' if p.unit == 'USD' else '' }}{{ fmt_credits(p.total) }}</span>{% endif %}
+                  <span class="muted">{{ fmt_ts(p.expire_at) if p.expire_at else '长期' }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+              {% if a.packs|length > 8 %}<div class="muted small">另有 {{ a.packs|length - 8 }} 个积分包未展开</div>{% endif %}
+            </details>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if not a.enabled %}
+            <span class="badge muted">停用</span>
+            {% elif a.cooldown_until and a.cooldown_until > now %}
+            <span class="badge danger">冷却 {{ a.cooldown_kind or '' }}</span>
+            <div class="muted small">至 {{ fmt_ts(a.cooldown_until) }}</div>
+            {% else %}
+            <span class="badge success">正常</span>
+            {% endif %}
+            {% if a.in_flight %}<div class="muted small">在途 {{ a.in_flight }}</div>{% endif %}
+            {% if a.last_error %}<div class="account-error">{{ a.last_error[:100] }}</div>{% endif %}
+          </td>
+          <td class="muted small" data-field="updated_at">{{ fmt_ts(a.credits_updated_at or a.last_used_at) }}</td>
+          <td class="right">
+            {% if provider.kind == 'trae' %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/refresh" class="inline-form js-refresh">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">刷新积分</button>
+            </form>
+            <form method="post" action="/admin/accounts/{{ a.id }}/checkin" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">签到</button>
+            </form>
+            {% if a.manual_disabled %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/enable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">恢复流量</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/disable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input class="mini-input" name="reason" placeholder="原因" maxlength="200">
+              <button class="mini-btn" type="submit">摘除流量</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/toggle" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
+            </form>
+            <form method="post" action="/admin/accounts/{{ a.id }}/delete" class="inline-form" data-confirm="确认删除账号 {{ a.name }}？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn danger" type="submit">删除</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/quota" class="inline-form js-refresh">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">刷新积分</button>
+            </form>
+            {% if provider.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/checkin" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">签到</button>
+            </form>
+            {% endif %}
+            {% if a.manual_disabled %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/enable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">恢复流量</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/disable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input class="mini-input" name="reason" placeholder="原因" maxlength="200">
+              <button class="mini-btn" type="submit">摘除流量</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/toggle" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
+            </form>
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/delete" class="inline-form" data-confirm="确认删除账号 {{ a.name }}？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn danger" type="submit">删除</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">＋</div><h3>还没有账号</h3><p>点击右上角「添加账号」或返回平台页导入凭据。</p></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>平台模型</h2><p>该平台可用的上游模型；自动同步失败时可手动维护</p></div>
+    <span class="pill">{{ models|length }} 个</span>
+  </div>
+  {% if models %}
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>模型 ID</th><th>显示名</th><th>上下文</th><th>来源</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for m in models %}
+        <tr>
+          <td><span class="model-tag">{{ m.region }}:{{ m.model_id }}</span></td>
+          <td>{{ m.display_name }}</td>
+          <td class="muted">{{ fmt_num(m.context_length) }}</td>
+          <td class="muted small">{{ '手动' if m.get('manual') else '同步' }}</td>
+          <td class="right">
+            <form method="post" action="/admin/platforms/{{ provider.id }}/models/remove" class="inline-form" data-confirm="确认移除模型 {{ m.model_id }}？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input type="hidden" name="model_id" value="{{ m.model_id }}">
+              <button class="mini-btn danger" type="submit">移除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="callout">
+    暂无模型。{% if provider.kind == 'trae' %}Trae 模型会在有可用账号时自动读取。{% else %}可点「同步模型」，或直接在下面手动添加。{% endif %}
+  </div>
+  {% endif %}
+  <form method="post" action="/admin/platforms/{{ provider.id }}/models/add" class="inline-add" style="margin-top:12px">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input name="model_id" required placeholder="上游模型 ID，例如 deepseek-v4.1-flash">
+    <input name="display_name" placeholder="显示名（可选）">
+    <input name="context_length" value="131072" style="max-width:120px">
+    <button class="btn btn-ghost" type="submit">手动添加模型</button>
+  </form>
+  {% if provider.last_error %}
+  <div class="flash flash-err" style="margin:12px 0 0">最近一次同步/额度错误：{{ provider.last_error[:300] }}</div>
+  {% endif %}
+</section>
+{% endblock %}

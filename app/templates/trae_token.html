@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Trae Cookie 登录{% endblock %}
+{% block page_title %}Trae {{ '国际版' if region == 'global' else '国内版' }} Cookie 登录{% endblock %}
+{% block eyebrow %}TRAE LOGIN{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/platforms">返回平台</a>
+{% endblock %}
+{% block content %}
+
+{% if msg %}<div class="flash {{ 'flash-ok' if ok == '1' else 'flash-err' }}">{{ msg }}</div>{% endif %}
+{% if error %}<div class="flash flash-err">{{ error }}</div>{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Cookie 登录并保存账号</h2>
+      <p>复制 Trae 网页会话 Cookie，系统会换取 Access Token 并保存账号。</p>
+    </div>
+    <span class="badge {{ 'success' if region == 'global' else 'muted' }}">
+      {{ '国际版' if region == 'global' else '国内版' }}
+    </span>
+  </div>
+
+  <form method="post" action="/admin/trae/cookie" class="stack" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="region" value="{{ region }}">
+    <label>X-Cloudide-Session Cookie
+      <textarea name="session_cookie" rows="4" required spellcheck="false" autocomplete="off"
+        placeholder="粘贴 X-Cloudide-Session 的值，也可以粘贴完整的 X-Cloudide-Session=..."></textarea>
+    </label>
+    <p class="hint">
+      获取方式：浏览器登录 <code>https://www.trae.ai</code> 后打开 DevTools →
+      Application → Cookies → 选择 <code>https://www.trae.ai</code> → 复制
+      <code>X-Cloudide-Session</code> 的值。网页会话通常约 14 天有效，过期后重新复制即可。
+    </p>
+    <div><button class="btn btn-primary" type="submit">用 Cookie 登录并保存</button></div>
+  </form>
+</section>
+
+<details class="panel">
+  <summary class="link" style="cursor:pointer;font-weight:600">备用方式：Refresh Token 登录</summary>
+  <div class="panel-head" style="margin-top:12px">
+    <div><h2>Refresh Token</h2><p>仅在 Cookie 方式不可用时使用；换取成功后直接保存账号。</p></div>
+  </div>
+  <form method="post" action="/admin/trae/token" class="stack" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="form-grid">
+      <label>区域
+        <select name="region">
+          <option value="global" {{ 'selected' if region == 'global' else '' }}>国际版 trae.ai</option>
+          <option value="cn" {{ 'selected' if region == 'cn' else '' }}>国内版 trae.com.cn</option>
+        </select>
+      </label>
+      <label>UID（可选）
+        <input name="uid" value="" placeholder="留空则从用户信息接口读取" autocomplete="off">
+      </label>
+    </div>
+    <label>Refresh Token
+      <textarea name="refresh_token" rows="4" required spellcheck="false" autocomplete="off"
+        placeholder="粘贴 Trae refreshToken"></textarea>
+    </label>
+    <div><button class="btn btn-ghost" type="submit">用 Refresh Token 登录并保存</button></div>
+  </form>
+</details>
+
+{% if result %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>登录结果</h2><p>账号已保存；令牌仅供排障查看。</p></div>
+    <span class="badge success">账号已保存</span>
+  </div>
+
+  <div class="stack">
+    <div class="form-grid">
+      <label>UID<input value="{{ result.uid or '—' }}" readonly></label>
+      <label>用户名<input value="{{ result.name or '—' }}" readonly></label>
+      <label>Access Token 过期时间<input value="{{ fmt_ts(result.expires_at) }}" readonly></label>
+    </div>
+
+    <label>Access Token
+      <textarea id="accessToken" rows="4" readonly spellcheck="false">{{ result.access_token }}</textarea>
+    </label>
+    <div class="row-actions">
+      <button class="mini-btn primary" type="button" data-copy="accessToken">复制 Access Token</button>
+    </div>
+
+    <label>新的 Refresh Token
+      <textarea id="refreshToken" rows="4" readonly spellcheck="false">{{ result.refresh_token }}</textarea>
+    </label>
+    <div class="row-actions">
+      <button class="mini-btn" type="button" data-copy="refreshToken">复制 Refresh Token</button>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll('[data-copy]').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var target = document.getElementById(button.getAttribute('data-copy'));
+      if (!target) return;
+      try {
+        await navigator.clipboard.writeText(target.value);
+        var old = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(function () { button.textContent = old; }, 1500);
+      } catch (err) {
+        target.select();
+        document.execCommand('copy');
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

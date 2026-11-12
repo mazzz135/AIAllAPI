@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · AIAll API</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+</head>
+<body class="auth-body">
+  <div class="auth-glow glow-a"></div>
+  <div class="auth-glow glow-b"></div>
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">T</span>
+      <div><strong>AIAll API</strong><small>把多个 AI 平台聚合成 OpenAI 兼容 API</small></div>
+    </div>
+    <h1>管理台登录</h1>
+    <p class="muted">首次部署的账号密码在 <code>data/initial_admin.txt</code>。</p>
+    {% if error %}<div class="flash flash-err">{{ error }}</div>{% endif %}
+    {% if msg %}<div class="flash flash-ok">{{ msg }}</div>{% endif %}
+    <form method="post" action="/admin/login" class="stack">
+      <label>用户名<input name="username" autocomplete="username" required autofocus placeholder="admin"></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
+      <button class="btn btn-primary btn-block" type="submit">登录管理台</button>
+    </form>
+    <div class="auth-foot">本地部署 · 凭据加密存储 · OpenAI 兼容</div>
+  </div>
+</body>
+</html>

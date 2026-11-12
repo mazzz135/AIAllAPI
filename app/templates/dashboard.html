@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}概览{% endblock %}
+{% block page_title %}运行概览{% endblock %}
+{% block eyebrow %}DASHBOARD{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/v1/models" target="_blank">查看模型</a>
+  <a class="btn btn-primary" href="/admin/platforms">平台聚合</a>
+  <a class="btn btn-ghost" href="/admin/virtuals">虚拟模型组</a>
+{% endblock %}
+{% block content %}
+<section class="stat-grid">
+  <div class="stat-card accent">
+    <div class="stat-label">平台 / 账号</div>
+    <div class="stat-value">{{ snapshot.enabled_platforms }}/{{ snapshot.platforms }} · {{ snapshot.enabled_accounts }}/{{ snapshot.accounts }}</div>
+    <div class="stat-foot">已启用平台 / 已启用账号</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">剩余积分</div>
+    <div class="stat-value">{{ fmt_credits(snapshot.credits) }}</div>
+    <div class="stat-foot">全部平台合计</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">已用积分</div>
+    <div class="stat-value">{{ fmt_credits(snapshot.credits_used) }}</div>
+    <div class="stat-foot">总积分 {{ fmt_credits(snapshot.credits_total) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">今日请求</div>
+    <div class="stat-value">{{ snapshot.today_requests }}</div>
+    <div class="stat-foot">{{ fmt_num(snapshot.today_tokens) }} tokens</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">今日积分消耗</div>
+    <div class="stat-value">{{ fmt_credits(snapshot.today_credits) }}</div>
+    <div class="stat-foot">按上游余额差值统计</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">模型 / 虚拟组</div>
+    <div class="stat-value">{{ snapshot.models }} · {{ snapshot.virtual_groups }}</div>
+    <div class="stat-foot">平台模型 / 对外模型组</div>
+  </div>
+</section>
+
+{% if snapshot.cooling_accounts %}
+<div class="flash flash-err" style="margin-top:0">
+  <span>{{ snapshot.cooling_accounts }} 个账号处于冷却或异常状态，请求会自动跳过。</span>
+  <a class="link" href="/admin/platforms">查看平台</a>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>平台概览</h2><p>账号、模型、积分与今日用量，按平台拆分</p></div>
+    <a class="link" href="/admin/platforms">平台管理 →</a>
+  </div>
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead>
+        <tr>
+          <th>平台</th><th>账号</th><th>模型</th><th>剩余积分</th><th>已用</th><th>总量</th>
+          <th>今日请求</th><th>今日消耗</th><th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in snapshot.platform_rows %}
+        <tr>
+          <td>
+            <a class="link" href="/admin/platforms/{{ p.id }}">{{ p.name }}</a>
+            <div class="muted small">{{ p.id }} · {{ p.region or '—' }}</div>
+          </td>
+          <td>{{ p.enabled_accounts }}/{{ p.accounts }}</td>
+          <td>{{ p.models }}</td>
+          <td><strong>{{ fmt_credits(p.remaining) }}</strong></td>
+          <td>{{ fmt_credits(p.used) }}</td>
+          <td>{{ fmt_credits(p.total) }}</td>
+          <td>{{ p.today_requests }}</td>
+          <td>{{ fmt_credits(p.today_credits) if p.today_credits else '—' }}</td>
+          <td>
+            {% if not p.enabled %}
+            <span class="badge muted">停用</span>
+            {% elif p.cooling %}
+            <span class="badge danger">{{ p.cooling }} 冷却</span>
+            {% elif p.last_error %}
+            <span class="badge danger" title="{{ p.last_error }}">异常</span>
+            {% else %}
+            <span class="badge success">正常</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>近 7 天用量</h2><p>Token 总量与请求趋势</p></div>
+      <span class="pill">累计 {{ fmt_num(snapshot.total_tokens) }} tokens</span>
+    </div>
+    <div class="chart">
+      {% for s in series %}
+      <div class="chart-col" title="{{ s.day }} · {{ s.requests }} 次 · {{ s.tokens }} tokens">
+        <div class="chart-bar-wrap">
+          <div class="chart-bar" style="height: {{ [((s.tokens / max_tokens) * 100)|round(1), 2]|max }}%"></div>
+        </div>
+        <div class="chart-day">{{ s.day[5:] }}</div>
+        <div class="chart-val">{{ fmt_num(s.tokens) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>快速接入</h2><p>兼容 OpenAI SDK / Chatbox / Cherry Studio</p></div>
+      <span class="badge success">运行中</span>
+    </div>
+    <div class="connect-list">
+      <div class="connect-row">
+        <span>Base URL</span>
+        <code id="baseUrl">{{ base_url }}/v1</code>
+        <button class="copy-btn" data-copy="{{ base_url }}/v1">复制</button>
+      </div>
+      <div class="connect-row">
+        <span>API Key</span>
+        <code id="apiKey">{{ api_key.plaintext if api_key else '请在设置中生成' }}</code>
+        <button class="copy-btn" data-copy="{{ api_key.plaintext if api_key else '' }}">复制</button>
+      </div>
+      <div class="connect-row">
+        <span>默认模型</span>
+        <code>{{ default_model }}</code>
+        <a class="copy-btn" href="/admin/settings">修改</a>
+      </div>
+    </div>
+    <div class="code-block">curl {{ base_url }}/v1/chat/completions \
+  -H "Authorization: Bearer {{ api_key.plaintext if api_key else 'sk-trae-...' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"{{ virtuals[0].name if virtuals else default_model }}","messages":[{"role":"user","content":"你好"}]}'</div>
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>虚拟模型组</h2><p>客户端可见的模型名与成员</p></div>
+      <a class="link" href="/admin/virtuals">管理 →</a>
+    </div>
+    {% if virtuals %}
+    <div class="table-wrap">
+      <table class="table compact">
+        <thead><tr><th>模型名</th><th>成员</th><th>状态</th></tr></thead>
+        <tbody>
+        {% for g in virtuals %}
+          <tr>
+            <td><span class="model-tag">{{ g.name }}</span><div class="muted small">{{ g.display_name }}</div></td>
+            <td>{{ g.member_count if g.member_count is defined else '—' }}</td>
+            <td><span class="badge {{ 'success' if g.enabled else 'muted' }}">{{ '启用' if g.enabled else '停用' }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state small"><p>还没有虚拟模型组，客户端暂时看不到模型。</p></div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>最近请求</h2><p>实时使用记录</p></div>
+      <a class="link" href="/admin/logs">全部日志 →</a>
+    </div>
+    {% if recent %}
+    <div class="table-wrap">
+      <table class="table compact">
+        <thead><tr><th>时间</th><th>模型</th><th>Tokens</th><th>积分</th><th>状态</th></tr></thead>
+        <tbody>
+        {% for r in recent %}
+          <tr>
+            <td class="mono muted">{{ fmt_ts(r.created_at) }}</td>
+            <td><span class="model-tag">{{ r.model }}</span></td>
+            <td>{{ fmt_num(r.total_tokens) }}</td>
+            <td>{{ fmt_credits(r.credits_delta) if r.credits_delta else '—' }}</td>
+            <td><span class="badge {{ 'success' if r.status == 'ok' else 'danger' }}">{{ r.status }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state small"><p>还没有请求记录。</p></div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

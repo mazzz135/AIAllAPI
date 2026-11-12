@@ -1,0 +1,19 @@
+[Unit]
+Description=AIAll API - OpenAI-compatible multi-platform relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/AIAllAPI
+EnvironmentFile=/www/wwwroot/AIAllAPI/.env
+ExecStart=/www/wwwroot/AIAllAPI/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 2999 --proxy-headers
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

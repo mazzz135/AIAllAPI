@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}使用日志{% endblock %}
+{% block page_title %}使用日志{% endblock %}
+{% block eyebrow %}USAGE LOGS{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/logs/export?model={{ model|urlencode }}&status={{ status|urlencode }}&days={{ days }}">导出 CSV</a>
+{% endblock %}
+{% block content %}
+<section class="stat-grid small-grid">
+  <div class="stat-card"><div class="stat-label">今日请求</div><div class="stat-value">{{ summary.requests or 0 }}</div></div>
+  <div class="stat-card"><div class="stat-label">输入 Tokens</div><div class="stat-value">{{ fmt_num(summary.prompt_tokens or 0) }}</div></div>
+  <div class="stat-card"><div class="stat-label">输出 Tokens</div><div class="stat-value">{{ fmt_num(summary.completion_tokens or 0) }}</div></div>
+  <div class="stat-card"><div class="stat-label">积分消耗</div><div class="stat-value">{{ fmt_credits(summary.credits_delta or 0) }}</div></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>任务台账</h2><p>定时任务与人工补跑的执行结果，展开可看每个账号的明细</p></div>
+    <a class="mini-btn" href="/admin/tasks">任务设置</a>
+  </div>
+  {% if ledger %}
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>任务</th><th>来源</th><th>结束时间</th><th>成功/总数</th><th>失败</th><th>跳过</th><th>明细</th></tr></thead>
+      <tbody>
+      {% for r in ledger %}
+        <tr>
+          <td><strong>{{ task_labels.get(r.task, r.task) }}</strong></td>
+          <td><span class="badge {{ 'muted' if r.source == 'manual' else 'success' }}">{{ r.source or 'schedule' }}</span></td>
+          <td class="mono muted small">{{ fmt_ts(r.finished_at) }}</td>
+          <td class="mono">{{ r.success }}/{{ r.total }}{% if r.all_failed %} <span class="badge danger">全灭</span>{% endif %}</td>
+          <td class="mono">{{ r.failed }}</td>
+          <td class="mono">{{ r.skipped }}</td>
+          <td class="task-details">
+            {% if r.details %}
+            <details>
+              <summary>{{ r.details|length }} 条</summary>
+              <table class="table compact mini-table">
+                <thead><tr><th>账号</th><th>结果</th><th>说明</th></tr></thead>
+                <tbody>
+                {% for d in r.details[:20] %}
+                  <tr>
+                    <td>{{ d.account }}</td>
+                    <td><span class="badge {{ 'success' if d.status in ('success','already') else ('danger' if d.status in ('failed','error') else 'muted') }}">{{ d.status }}</span></td>
+                    <td class="muted small">{{ d.message }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </details>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">◷</div><h3>还没有任务执行记录</h3><p>签到、模型同步或成长任务跑过一轮后会出现在这里。</p></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>请求明细</h2><p>共 {{ total }} 条记录，包含流式/非流式、Token 与积分计量</p></div>
+  </div>
+  <form method="get" action="/admin/logs" class="filter-bar">
+    <label>模型<input name="model" value="{{ model }}" placeholder="全部模型"></label>
+    <label>状态
+      <select name="status">
+        <option value="" {{ 'selected' if not status else '' }}>全部</option>
+        <option value="ok" {{ 'selected' if status == 'ok' else '' }}>ok</option>
+        <option value="error" {{ 'selected' if status == 'error' else '' }}>error</option>
+      </select>
+    </label>
+    <label>时间范围
+      <select name="days">
+        <option value="0" {{ 'selected' if days == 0 else '' }}>全部</option>
+        <option value="1" {{ 'selected' if days == 1 else '' }}>今天</option>
+        <option value="7" {{ 'selected' if days == 7 else '' }}>近 7 天</option>
+        <option value="30" {{ 'selected' if days == 30 else '' }}>近 30 天</option>
+      </select>
+    </label>
+    <button class="btn btn-primary" type="submit">筛选</button>
+    <a class="btn btn-ghost" href="/admin/logs">重置</a>
+  </form>
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>时间</th><th>模型 / 账号</th><th>类型</th><th>Tokens</th><th>积分</th><th>耗时</th><th>状态</th><th>请求 ID</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="mono muted small">{{ fmt_ts(r.created_at) }}</td>
+          <td>
+            <div class="model-tag">{{ r.model or '—' }}</div>
+            <div class="muted small">{{ r.account_name or '—' }}</div>
+            {% if r.provider_id %}<div class="muted tiny">provider: {{ r.provider_id }}</div>{% endif %}
+            {% if r.virtual_model %}<div class="muted tiny">virtual: {{ r.virtual_model }}</div>{% endif %}
+          </td>
+          <td><span class="badge muted">{{ '流式' if r.stream else '普通' }}</span><div class="muted small">{{ r.endpoint }}</div></td>
+          <td>
+            <div>{{ fmt_num(r.total_tokens) }}</div>
+            <div class="muted small">入 {{ fmt_num(r.prompt_tokens) }} / 出 {{ fmt_num(r.completion_tokens) }}</div>
+            {% if r.cached_tokens %}<div class="muted small">缓存 {{ fmt_num(r.cached_tokens) }}</div>{% endif %}
+          </td>
+          <td>
+            <div>{{ fmt_credits(r.credits_delta) if r.credits_delta else '—' }}</div>
+            {% if r.credits_estimated %}<div class="muted small">估 {{ fmt_credits(r.credits_estimated) }}</div>{% endif %}
+            {% if r.credits_before >= 0 %}<div class="muted small">{{ fmt_credits(r.credits_before) }} → {{ fmt_credits(r.credits_after) }}</div>{% endif %}
+          </td>
+          <td class="mono small">{{ r.latency_ms }}ms</td>
+          <td>
+            <span class="badge {{ 'success' if r.status == 'ok' else 'danger' }}">{{ r.status }}</span>
+            {% if r.error %}<div class="account-error" title="{{ r.error }}">{{ r.error[:60] }}</div>{% endif %}
+          </td>
+          <td class="mono muted tiny">{{ r.request_id[:20] }}…<div>{{ r.ip }}</div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="pager">
+    {% if page > 1 %}
+    <a class="btn btn-ghost" href="/admin/logs?page={{ page - 1 }}&model={{ model|urlencode }}&status={{ status }}&days={{ days }}">上一页</a>
+    {% endif %}
+    <span>第 {{ page }} / {{ pages }} 页</span>
+    {% if page < pages %}
+    <a class="btn btn-ghost" href="/admin/logs?page={{ page + 1 }}&model={{ model|urlencode }}&status={{ status }}&days={{ days }}">下一页</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">∅</div><h3>没有匹配记录</h3><p>调整筛选条件，或先发起一次 API 请求。</p></div>
+  {% endif %}
+</section>
+{% endblock %}

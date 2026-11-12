@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}平台登录{% endblock %}
+{% block page_title %}{{ provider.name if provider else login.provider_id }} 登录{% endblock %}
+{% block eyebrow %}PLATFORM LOGIN{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/platforms">返回平台</a>
+{% endblock %}
+{% block content %}
+{% if login.status == 'expired' %}
+<div class="flash flash-err">登录会话已过期，请返回平台页重新发起登录。</div>
+{% endif %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>第 1 步：打开授权链接</h2><p>请使用无痕窗口，避免复用已有登录态</p></div>
+  </div>
+  <div class="stack">
+    <label>授权链接
+      <input id="authUrl" readonly value="{{ login.auth_url }}">
+    </label>
+    <div class="row-actions">
+      <button class="btn btn-primary" type="button" id="openBtn">打开授权页</button>
+      <button class="btn btn-ghost" type="button" id="copyBtn">复制链接</button>
+    </div>
+  </div>
+</section>
+
+{% if provider and provider.kind == 'lobster' %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>第 2 步：粘贴回调地址</h2><p>登录后浏览器会跳转到 <code>127.0.0.1</code> 回调页，把地址栏完整 URL 粘贴到这里</p></div>
+  </div>
+  <form method="post" action="/admin/platforms/login/{{ login.id }}/callback" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label>回调 URL<textarea name="callback_url" rows="3" required placeholder="http://127.0.0.1:xxxxx/auth/callback?code=...&state=..."></textarea></label>
+    <div><button class="btn btn-primary" type="submit">提交并添加账号</button></div>
+  </form>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>第 2 步：等待授权完成</h2><p>浏览器登录成功后，本页会自动轮询并保存账号</p></div>
+    <span class="badge muted" id="statusBadge">等待中</span>
+  </div>
+  <div class="stack">
+    <div id="statusText" class="callout">尚未检测到授权完成。</div>
+    <div><button class="btn btn-primary" type="button" id="pollBtn">立即检测</button></div>
+  </div>
+</section>
+
+<script>
+(function () {
+  const loginId = {{ login.id | tojson }};
+  const csrf = {{ csrf | tojson }};
+  const badge = document.getElementById('statusBadge');
+  const text = document.getElementById('statusText');
+  let timer = null;
+
+  async function poll() {
+    try {
+      const body = new URLSearchParams({ _csrf: csrf });
+      const res = await fetch('/admin/platforms/login/' + loginId + '/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        badge.textContent = '成功';
+        badge.className = 'badge success';
+        text.textContent = '登录成功，账号已保存。3 秒后返回平台页。';
+        if (timer) clearInterval(timer);
+        setTimeout(() => { location.href = '/admin/platforms'; }, 3000);
+        return;
+      }
+      if (data.status === 'error') {
+        badge.textContent = '失败';
+        badge.className = 'badge danger';
+        text.textContent = data.message || '登录失败';
+        if (timer) clearInterval(timer);
+        return;
+      }
+      text.textContent = data.message || '等待浏览器授权…';
+    } catch (err) {
+      text.textContent = '检测失败：' + err;
+    }
+  }
+
+  document.getElementById('openBtn').onclick = () => window.open(document.getElementById('authUrl').value, '_blank');
+  document.getElementById('copyBtn').onclick = async () => {
+    await navigator.clipboard.writeText(document.getElementById('authUrl').value);
+    document.getElementById('copyBtn').textContent = '已复制';
+  };
+  document.getElementById('pollBtn').onclick = poll;
+  timer = setInterval(poll, 4000);
+  poll();
+})();
+</script>
+{% endif %}
+{% endblock %}

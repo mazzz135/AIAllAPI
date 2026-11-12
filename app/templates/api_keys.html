@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}API Key{% endblock %}
+{% block page_title %}API Key{% endblock %}
+{% block eyebrow %}API KEYS{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>API Key</h2><p>供 OpenAI 兼容客户端使用；每个 Key 独立记录使用量</p></div>
+    <form method="post" action="/admin/settings/api-key" class="inline-form" data-confirm="重新生成会停用当前所有 Key，已配置的客户端需要更新。确认继续？">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button class="btn btn-primary" type="submit">重新生成主 Key</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>名称</th><th>Key</th><th>状态</th><th>最近使用</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for k in keys %}
+        <tr>
+          <td><strong>{{ k.name }}</strong><div class="muted small">#{{ k.id }} · {{ k.key_prefix }}</div></td>
+          <td><code class="key-code">{{ k.plaintext or '不可恢复' }}</code></td>
+          <td><span class="badge {{ 'success' if k.enabled else 'muted' }}">{{ '启用' if k.enabled else '停用' }}</span></td>
+          <td class="muted small">{{ fmt_ts(k.last_used_at) }}</td>
+          <td class="right">
+            {% if k.enabled %}
+            <form method="post" action="/admin/settings/api-key/{{ k.id }}/revoke" class="inline-form" data-confirm="确认停用这个 Key？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn danger" type="submit">停用</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <form method="post" action="/admin/settings/api-key/add" class="inline-add">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input name="name" placeholder="新 Key 名称，例如 chatbox" maxlength="64">
+    <button class="btn btn-ghost" type="submit">新增 Key</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>接入方式</h2><p>OpenAI 兼容协议，可直接用于 ChatBox / Cherry Studio / Codex 等客户端</p></div></div>
+  <div class="callout">
+    <strong>Base URL</strong>
+    <p><code class="wrap">{{ base_url }}/v1</code></p>
+    <p>请求头：<code>Authorization: Bearer &lt;API Key&gt;</code></p>
+  </div>
+  <div class="callout">
+    <strong>可用接口</strong>
+    <p><code>GET /v1/models</code> · <code>POST /v1/chat/completions</code> · <code>GET /v1/status</code></p>
+    <p>Key 只展示一次明文，重新生成后旧 Key 立即失效；请勿把 Key 提交到公开仓库或群聊。</p>
+  </div>
+</section>
+{% endblock %}

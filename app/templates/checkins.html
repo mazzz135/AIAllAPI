@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}签到记录{% endblock %}
+{% block page_title %}签到记录{% endblock %}
+{% block eyebrow %}CHECK-INS{% endblock %}
+{% block top_actions %}
+  <form method="post" action="/admin/checkins/run-all" class="inline-form" data-confirm="立即对全部平台和账号执行签到？">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="btn btn-primary" type="submit">立即全部签到</button>
+  </form>
+{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>自动签到</h2><p>所有平台统一使用同一个开关和每日签到时间</p></div>
+    <span class="badge {{ 'success' if settings.get('auto_checkin') == '1' else 'muted' }}">
+      {{ '已开启' if settings.get('auto_checkin') == '1' else '已关闭' }}
+    </span>
+  </div>
+  <form method="post" action="/admin/checkins/settings" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="form-grid">
+      <label>自动签到
+        <select name="auto_checkin">
+          <option value="1" {{ 'selected' if settings.get('auto_checkin') == '1' else '' }}>开启</option>
+          <option value="0" {{ 'selected' if settings.get('auto_checkin') != '1' else '' }}>关闭</option>
+        </select>
+      </label>
+      <label>每日签到时间
+        <input name="checkin_time" type="time" value="{{ settings.get('checkin_time', '10:05') }}">
+      </label>
+      <label>今日是否执行
+        <input value="{{ '已执行' if today_run else '未执行' }}（{{ today }}）" readonly>
+      </label>
+      <label>已连续签到
+        <input value="{{ streak }} 天" readonly>
+      </label>
+    </div>
+    <p class="hint">服务器按 Asia/Shanghai 时区判断；Trae、WorkBuddy、CodeBuddy、LobsterAI、Qoder 统一使用此开关和时间。到点后当天只执行一次，手动签到不受时间限制。</p>
+    <div><button class="btn btn-primary" type="submit">保存自动签到设置</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>签到历史</h2><p>Trae 与各平台的签到结果、奖励积分与失败原因</p></div>
+    <span class="pill">最近 200 条</span>
+  </div>
+  {% if checkins %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>时间</th><th>平台</th><th>账号</th><th>签到日期</th><th>结果</th><th>奖励积分</th><th>有效期至</th><th>说明</th></tr></thead>
+      <tbody>
+      {% for c in checkins %}
+        <tr>
+          <td class="mono muted small">{{ fmt_ts(c.created_at) }}</td>
+          <td>{{ c.platform_name or c.provider_name or '—' }}</td>
+          <td><strong>{{ c.account_name }}</strong></td>
+          <td class="mono">{{ c.day }}</td>
+          <td>
+            <span class="badge {{ 'success' if c.status in ('success','already') else ('danger' if c.status in ('failed','error') else 'muted') }}">{{ c.status }}</span>
+          </td>
+          <td>{{ fmt_credits(c.credits) }}</td>
+          <td class="muted small">{{ fmt_ts(c.valid_until) if c.valid_until else '—' }}</td>
+          <td class="muted">{{ c.message }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">✓</div><h3>还没有签到记录</h3><p>点击右上角「立即全部签到」，或开启自动签到。</p></div>
+  {% endif %}
+</section>
+{% endblock %}

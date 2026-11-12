@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}平台聚合{% endblock %}
+{% block page_title %}平台聚合{% endblock %}
+{% block eyebrow %}PLATFORMS{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/models">模型管理</a>
+  <a class="btn btn-ghost" href="/admin/providers">自定义端点</a>
+{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>内置平台</h2><p>WorkBuddy、CodeBuddy、LobsterAI、Trae 国内/国际、Qoder 国内/国际统一接入</p></div>
+    <span class="pill">{{ platforms|length }} 个平台</span>
+  </div>
+  <div class="callout">
+    <p>每个平台可添加多个账号，按权重轮询；账号失效自动跳过。模型在「模型管理」中绑定平台与上游模型名。</p>
+  </div>
+</section>
+
+{% for p in platforms %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ p.name }} <span class="badge {{ 'success' if p.enabled else 'muted' }}">{{ '启用' if p.enabled else '停用' }}</span></h2>
+      <p><code>{{ p.id }}</code> · {{ p.kind }} · {{ p.region or '—' }} · {{ p.base_url }}</p>
+    </div>
+    <div class="row-actions">
+      <a class="mini-btn primary" href="/admin/platforms/{{ p.id }}">进入管理</a>
+      <form method="post" action="/admin/platforms/{{ p.id }}/test" class="inline-form js-test">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit" title="只读探测：拉取一次模型列表，不写库、不消耗额度">测试</button>
+      </form>
+      {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
+      <form method="post" action="/admin/platforms/{{ p.id }}/checkin-all" class="inline-form js-toast">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit">全部签到</button>
+      </form>
+      {% endif %}
+      {% if p.kind in ('workbuddy', 'codebuddy', 'qoder') %}
+      <form method="post" action="/admin/platforms/{{ p.id }}/login/start" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn primary" type="submit">网页登录</button>
+      </form>
+      {% elif p.kind == 'lobster' %}
+      <form method="post" action="/admin/platforms/{{ p.id }}/login/start" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn primary" type="submit">生成授权链接</button>
+      </form>
+      {% elif p.kind == 'trae' %}
+      <a class="mini-btn primary" href="/admin/platforms/trae/login?region={{ p.region or 'cn' }}">{{ 'Cookie 登录国际版' if (p.region or 'cn') == 'global' else '添加 Trae 国内版账号' }}</a>
+      {% endif %}
+      {% if p.kind != 'trae' %}
+      <form method="post" action="/admin/platforms/{{ p.id }}/sync" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit">同步模型</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/admin/platforms/{{ p.id }}/toggle" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit">{{ '停用' if p.enabled else '启用' }}</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="stat-grid small-grid" style="margin-bottom:12px">
+    <div class="stat-card"><div class="stat-label">账号</div><div class="stat-value">{{ p.account_count }}</div></div>
+    <div class="stat-card"><div class="stat-label">模型</div><div class="stat-value">{{ p.model_count }}</div></div>
+    <div class="stat-card"><div class="stat-label">区域</div><div class="stat-value" style="font-size:20px">{{ p.region or '—' }}</div></div>
+    <div class="stat-card"><div class="stat-label">最近同步</div><div class="stat-value" style="font-size:18px">{{ fmt_ts(p.last_synced_at) }}</div></div>
+  </div>
+  {% if p.last_error %}<div class="flash flash-err" style="margin:0 0 12px">{{ p.last_error[:300] }}</div>{% endif %}
+
+  {% if p.kind != 'trae' %}
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>账号</th><th>UID</th><th>积分</th><th>状态</th><th>最近签到</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for a in p.accounts %}
+        <tr data-account-id="{{ a.id }}">
+          <td><strong>{{ a.name }}</strong><div class="muted small">#{{ a.id }} · {{ a.auth_type }}</div></td>
+          <td><code>{{ a.uid or '—' }}</code></td>
+          <td data-field="credits" data-unit="{{ a.credit_unit or 'credits' }}">{{ fmt_money(a.credits) if a.credit_unit == 'USD' else fmt_credits(a.credits) }}</td>
+          <td>
+            <span class="badge {{ 'success' if a.enabled and a.status == 'ready' else 'muted' }}">{{ '正常' if a.enabled and a.status == 'ready' else ('停用' if not a.enabled else a.status) }}</span>
+            {% if a.last_error %}<div class="account-error">{{ a.last_error[:90] }}</div>{% endif %}
+            {% if a.manual_disabled %}<div class="muted small">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>{% endif %}
+          </td>
+          <td class="muted small">{{ fmt_ts(a.last_checkin_at) }}</td>
+          <td class="right">
+            {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/quota" class="inline-form js-refresh">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">刷新积分</button>
+            </form>
+            {% endif %}
+            {% if p.kind in ('workbuddy', 'codebuddy', 'lobster', 'qoder') %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/checkin" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">签到</button>
+            </form>
+            {% endif %}
+            {% if a.manual_disabled %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/enable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">恢复流量</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/disable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input class="mini-input" name="reason" placeholder="摘除原因（可选）" maxlength="200" title="仅用于记录为什么把这个账号移出对话轮换，不影响签到与保活">
+              <button class="mini-btn" type="submit">摘除流量</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/toggle" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
+            </form>
+            <form method="post" action="/admin/platforms/accounts/{{ a.id }}/delete" class="inline-form" data-confirm="确认删除账号 {{ a.name }}？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <details class="inline-add">
+    <summary class="link">导入凭据 / PAT</summary>
+    <form method="post" action="/admin/platforms/{{ p.id }}/accounts/manual" class="stack" style="margin-top:10px">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="form-grid">
+        <label>账号名称<input name="name" placeholder="可选"></label>
+        <label>UID（Qoder / WorkBuddy 必填）<input name="uid" placeholder="用户 ID"></label>
+      </div>
+      <label>凭据
+        <textarea name="credential" rows="5" required placeholder='{% if p.kind == "qoder" %}粘贴 Qoder CLI user JSON，或直接粘贴 PAT（需同时填写 UID）{% elif p.kind in ("workbuddy", "codebuddy") %}{"access_token":"...","refresh_token":"...","uid":"..."}{% else %}{"auth":{"accessToken":"...","refreshToken":"..."},"account":{"uid":"..."}}{% endif %}'></textarea>
+      </label>
+      <div><button class="btn btn-primary" type="submit">导入账号</button></div>
+    </form>
+  </details>
+  {% else %}
+  {% set tacc = trae_accounts.get(p.region or 'cn', []) %}
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>账号</th><th>UID</th><th>积分</th><th>状态</th><th>最近使用</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for a in tacc %}
+        <tr data-account-id="{{ a.id }}">
+          <td><strong>{{ a.name }}</strong><div class="muted small">#{{ a.id }} · {{ a.auth_type }}</div></td>
+          <td><code>{{ a.uid or '—' }}</code></td>
+          <td data-field="credits" data-unit="{{ a.credit_unit or 'credits' }}">{{ fmt_money(a.credits) if a.credit_unit == 'USD' else fmt_credits(a.credits) }}</td>
+          <td><span class="badge {{ 'success' if a.enabled else 'muted' }}">{{ '正常' if a.enabled else '停用' }}</span>{% if a.last_error %}<div class="account-error">{{ a.last_error[:80] }}</div>{% endif %}{% if a.manual_disabled %}<div class="muted small">已摘除流量{% if a.manual_reason %}：{{ a.manual_reason[:60] }}{% endif %}</div>{% endif %}</td>
+          <td class="muted small">{{ fmt_ts(a.last_used_at) }}</td>
+          <td class="right">
+            <form method="post" action="/admin/accounts/{{ a.id }}/refresh" class="inline-form js-refresh">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">刷新积分</button>
+            </form>
+            <form method="post" action="/admin/accounts/{{ a.id }}/checkin" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">签到</button>
+            </form>
+            {% if a.manual_disabled %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/enable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">恢复流量</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/disable" class="inline-form js-toast">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input class="mini-input" name="reason" placeholder="摘除原因（可选）" maxlength="200" title="仅用于记录为什么把这个账号移出对话轮换，不影响签到与保活">
+              <button class="mini-btn" type="submit">摘除流量</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/accounts/{{ a.id }}/toggle" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">{{ '停用' if a.enabled else '启用' }}</button>
+            </form>
+            <form method="post" action="/admin/accounts/{{ a.id }}/delete" class="inline-form" data-confirm="确认删除账号 {{ a.name }}？">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <details class="inline-add">
+    <summary class="link">平台地址与高级配置</summary>
+    <form method="post" action="/admin/platforms/{{ p.id }}/config" class="stack" style="margin-top:10px">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="form-grid">
+        <label>Base URL<input name="base_url" value="{{ p.base_url }}"></label>
+        <label>配置 JSON<input name="config_json" value='{{ p.config | tojson }}'></label>
+      </div>
+      <div><button class="btn btn-ghost" type="submit">保存配置</button></div>
+    </form>
+  </details>
+
+  {% if p.models %}
+  <div class="model-list">
+    {% for m in p.models[:60] %}
+    <span class="model-tag" title="{{ m.id }}">{{ m.id }}</span>
+    {% endfor %}
+    {% if p.models|length > 60 %}<span class="muted small">+{{ p.models|length - 60 }} more</span>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if pending %}
+<section class="panel">
+  <div class="panel-head"><div><h2>待完成登录</h2><p>打开授权链接完成登录后回到对应页面</p></div></div>
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>平台</th><th>创建时间</th><th>过期时间</th><th>状态</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for l in pending %}
+      <tr>
+        <td>{{ l.provider_id }}</td>
+        <td class="muted small">{{ fmt_ts(l.created_at) }}</td>
+        <td class="muted small">{{ fmt_ts(l.expires_at) }}</td>
+        <td><span class="badge muted">{{ l.status }}</span></td>
+        <td class="right"><a class="mini-btn" href="/admin/platforms/login/{{ l.id }}">继续</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+{% block page_title %}系统设置{% endblock %}
+{% block eyebrow %}SETTINGS{% endblock %}
+{% block content %}
+<section class="grid-2">
+  <div class="panel">
+    <div class="panel-head"><div><h2>基础设置</h2><p>模型、日志与上游超时（任务相关配置在「任务设置」页）</p></div></div>
+    <form method="post" action="/admin/settings" class="stack">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="form-grid">
+        <label>默认模型<input name="default_model" value="{{ settings.default_model }}" placeholder="DeepSeek-V4-Flash"></label>
+        <label>每天自动更新模型
+          <select name="models_auto_refresh">
+            <option value="1" {{ 'selected' if settings.get('models_auto_refresh', '1') == '1' else '' }}>开启</option>
+            <option value="0" {{ 'selected' if settings.get('models_auto_refresh', '1') != '1' else '' }}>关闭</option>
+          </select>
+        </label>
+        <label>模型更新时间<input name="models_refresh_time" type="time" value="{{ settings.get('models_refresh_time', '10:10') }}"></label>
+        <label>上游 function
+          <select name="chat_function">
+            {% for fn in ['solo_work_remote', 'chat_v3', 'solo_agent'] %}
+            <option value="{{ fn }}" {{ 'selected' if settings.chat_function == fn else '' }}>{{ fn }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>系统提示词模式
+          <select name="prompt_mode">
+            {% for mode in ['passthrough', 'custom', 'append'] %}
+            <option value="{{ mode }}" {{ 'selected' if settings.get('prompt.mode', 'passthrough') == mode else '' }}>{{ mode }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>提示词文件（custom/append）<input name="prompt_file" value="{{ settings.get('prompt.file', '') }}" placeholder="相对项目根目录，留空使用内置"></label>
+        <label>日志保留天数<input name="log_retention_days" type="number" min="1" max="3650" value="{{ settings.log_retention_days }}"></label>
+        <label>每账号并发<input name="max_concurrent_per_account" type="number" min="1" max="8" value="{{ settings.max_concurrent_per_account }}"></label>
+        <label>上游超时（秒）<input name="upstream_timeout" type="number" min="30" max="900" value="{{ settings.upstream_timeout }}"></label>
+        <label>首事件超时（秒）<input name="first_event_timeout" type="number" min="10" max="300" value="{{ settings.first_event_timeout }}"></label>
+        <label>公网地址<input name="public_base_url" value="{{ settings.public_base_url }}" placeholder="https://trae.example.com"></label>
+        <label>账号最大在途请求<input name="pool_max_in_flight" type="number" min="1" max="16" value="{{ settings.pool_max_in_flight or 2 }}"></label>
+        <label>连续失败熔断阈值<input name="pool_breaker_threshold" type="number" min="1" max="20" value="{{ settings.pool_breaker_threshold or 3 }}"></label>
+        <label>当日积分上限（0=不限）<input name="daily_credit_limit" type="number" min="0" step="0.01" value="{{ settings.daily_credit_limit or 0 }}"></label>
+        <label>会话粘性时长（秒）<input name="pool_session_ttl" type="number" min="60" max="86400" value="{{ settings.pool_session_ttl or 1800 }}"></label>
+        <label>快过期积分窗口（天）<input name="pool_expiring_soon_days" type="number" min="0" max="60" value="{{ settings.pool_expiring_soon_days or 7 }}"></label>
+        <label>成本探索间隔（秒，0=关）<input name="pool_cost_explore_interval" type="number" min="0" max="86400" value="{{ settings.pool_cost_explore_interval or 1800 }}"></label>
+        <label>成本探索每日上限<input name="pool_cost_explore_max_per_day" type="number" min="0" max="500" value="{{ settings.pool_cost_explore_max_per_day or 48 }}"></label>
+      </div>
+      <div class="check-row">
+        <label class="check"><input type="checkbox" name="allow_any_key" {{ 'checked' if settings.allow_any_key == '1' else '' }}> 允许任意 API Key（不建议）</label>
+        <label class="check"><input type="checkbox" name="sanitize_fingerprint" {{ 'checked' if settings.get('privacy.sanitize_fingerprint', '1') == '1' else '' }}> 清洗出站请求体指纹字段</label>
+      </div>
+      <div><button class="btn btn-primary" type="submit">保存设置</button></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div><h2>修改管理员密码</h2><p>修改后所有会话会失效</p></div></div>
+    <form method="post" action="/admin/settings/password" class="stack">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>原密码<input name="old_password" type="password" required autocomplete="current-password"></label>
+      <label>新密码<input name="new_password" type="password" minlength="8" required autocomplete="new-password"></label>
+      <label>确认新密码<input name="confirm_password" type="password" minlength="8" required autocomplete="new-password"></label>
+      <div><button class="btn btn-primary" type="submit">更新密码</button></div>
+    </form>
+    <div class="callout">
+      <strong>登录回调地址</strong>
+      <p><code class="wrap">{{ callback_url }}</code></p>
+      <p>如果部署在反向代理后，请把「公网地址」设置为实际访问地址，登录回调链接会使用它。</p>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>可观测与告警</h2><p>Prometheus 指标、池健康度 Webhook 告警与管理操作审计</p></div></div>
+  <form method="post" action="/admin/settings/observability" class="stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="form-grid">
+      <label>告警评估间隔（秒）<input name="alerting_interval_seconds" type="number" min="5" max="3600" value="{{ settings.alerting_interval_seconds or 30 }}"></label>
+      <label>CN 最小健康账号（0=不评估）<input name="alerting_min_healthy_cn" type="number" min="0" max="100" value="{{ settings.alerting_min_healthy_cn or 1 }}"></label>
+      <label>Global 最小健康账号（0=不评估）<input name="alerting_min_healthy_global" type="number" min="0" max="100" value="{{ settings.alerting_min_healthy_global or 0 }}"></label>
+      <label>熔断账号阈值（0=不评估）<input name="alerting_breaker_threshold" type="number" min="0" max="100" value="{{ settings.alerting_breaker_threshold or 0 }}"></label>
+      <label>连续触发拍数<input name="alerting_for_ticks" type="number" min="1" max="100" value="{{ settings.alerting_for_ticks or 3 }}"></label>
+      <label>连续恢复拍数<input name="alerting_clear_ticks" type="number" min="1" max="100" value="{{ settings.alerting_clear_ticks or 3 }}"></label>
+      <label>启动宽限（秒）<input name="alerting_startup_grace_seconds" type="number" min="0" max="3600" value="{{ settings.alerting_startup_grace_seconds or 30 }}"></label>
+      <label>投递超时（秒）<input name="alerting_timeout_seconds" type="number" min="1" max="60" step="0.5" value="{{ settings.alerting_timeout_seconds or 5 }}"></label>
+      <label class="wide">Webhook 地址<input name="alerting_webhook_url" value="{{ settings.alerting_webhook_url }}" placeholder="https://example.com/traeapi-alert"></label>
+      <label class="wide">Webhook HMAC 密钥（留空保持不变；清除请填 -）<input name="alerting_secret" type="password" value="" placeholder="{{ '已设置，留空保持不变' if settings.alerting_secret else '未设置' }}" autocomplete="new-password"></label>
+      <label class="wide">审计文件路径<input name="admin_audit_file" value="{{ settings.admin_audit_file or './data/admin_audit.log' }}" placeholder="./data/admin_audit.log"></label>
+    </div>
+    <div class="check-row">
+      <label class="check"><input type="checkbox" name="metrics_enabled" {{ 'checked' if settings.metrics_enabled == '1' else '' }}> 开启 Prometheus /metrics</label>
+      <label class="check"><input type="checkbox" name="metrics_legacy_prefix" {{ 'checked' if settings.get('metrics.legacy_prefix', '1') == '1' else '' }}> 同时输出旧指标前缀（traeapi_ / wb2api_）</label>
+      <label class="check"><input type="checkbox" name="metrics_legacy_prefix" {{ 'checked' if settings.get('metrics.legacy_prefix', '1') == '1' else '' }}> 同时输出旧指标前缀（traeapi_ / wb2api_）</label>
+      <label class="check"><input type="checkbox" name="alerting_enabled" {{ 'checked' if settings.alerting_enabled == '1' else '' }}> 开启可用性阈值告警</label>
+      <label class="check"><input type="checkbox" name="alerting_send_resolve" {{ 'checked' if settings.alerting_send_resolve == '1' else '' }}> 恢复时发送 resolve 通知</label>
+      <label class="check"><input type="checkbox" name="admin_audit_enabled" {{ 'checked' if settings.admin_audit_enabled == '1' else '' }}> 开启管理操作审计</label>
+    </div>
+    <div class="callout">
+      <strong>抓取方式</strong>
+      <p><code>GET {{ base_url }}/metrics</code>，请求头 <code>Authorization: Bearer &lt;API Key&gt;</code>。指标只包含聚合量，不含账号 uid、token 等敏感维度。</p>
+    </div>
+    <div><button class="btn btn-primary" type="submit">保存可观测设置</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>运行信息</h2><p>部署参数与安全提示</p></div></div>
+  <div class="info-grid">
+    <div><span>服务名称</span><strong>{{ app_name }}</strong></div>
+    <div><span>版本</span><strong>v{{ version }}</strong></div>
+    <div><span>监听端口</span><strong>{{ port }}</strong></div>
+    <div><span>数据目录</span><strong>{{ data_dir }}</strong></div>
+    <div><span>凭据加密</span><strong>Fernet + 本地密钥</strong></div>
+    <div><span>管理员</span><strong>{{ admin.username }}</strong></div>
+  </div>
+  <div class="callout warn">
+    <strong>安全建议</strong>
+    <p>不要把 API Key、refreshToken、会话 Cookie 发到公开群聊；公网部署请在宝塔开启 HTTPS，并限制管理台访问来源。首次部署后请删除 <code>data/initial_admin.txt</code> 与 <code>data/initial_api_key.txt</code>。</p>
+  </div>
+</section>
+{% endblock %}

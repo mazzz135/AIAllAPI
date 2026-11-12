@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}虚拟模型组{% endblock %}
+{% block page_title %}虚拟模型组{% endblock %}
+{% block eyebrow %}VIRTUAL MODELS{% endblock %}
+{% block top_actions %}
+  <a class="btn btn-ghost" href="/admin/platforms">平台聚合</a>
+  <a class="btn btn-ghost" href="/admin/logs">使用日志</a>
+{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>新建虚拟模型组</h2><p>一个请求模型名聚合多个平台模型，按权重分摊，失败自动切换</p></div>
+    <span class="pill">一个名称 → 多个上游模型</span>
+  </div>
+  <div class="callout">
+    <p>虚拟模型组就是模型映射入口：组名是客户端请求的模型名，成员从平台已有模型中选择。只用一个成员时就是固定映射。</p>
+  </div>
+  <form method="post" action="/admin/virtuals/add" class="inline-add">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input name="name" required placeholder="请求模型名，例如 deepseek-flash（不能含 : / 空格）">
+    <input name="display_name" placeholder="显示名称（可选）">
+    <button class="btn btn-primary" type="submit">创建</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>平台积分概览</h2><p>成员实际使用的上游平台余额与账号状态</p></div>
+    <a class="link" href="/admin/platforms">平台管理 →</a>
+  </div>
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>平台</th><th>账号</th><th>剩余积分</th><th>已用</th><th>总量</th><th>冷却</th><th>状态</th></tr></thead>
+      <tbody>
+      {% for p in providers %}
+        {% set st = platform_stats.get(p.id, {}) %}
+        <tr>
+          <td><a class="link" href="/admin/platforms/{{ p.id }}">{{ p.name }}</a><div class="muted small">{{ p.id }}</div></td>
+          <td>{{ st.get('enabled', 0) }}/{{ st.get('accounts', 0) }}</td>
+          <td><strong>{{ fmt_credits(st.get('remaining')) }}</strong></td>
+          <td>{{ fmt_credits(st.get('used')) }}</td>
+          <td>{{ fmt_credits(st.get('total')) }}</td>
+          <td>{{ st.get('cooling', 0) }}</td>
+          <td>
+            {% if not p.enabled %}<span class="badge muted">停用</span>
+            {% elif st.get('cooling') %}<span class="badge danger">部分冷却</span>
+            {% else %}<span class="badge success">正常</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% for g in groups %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ g.display_name or g.name }} <span class="badge {{ 'success' if g.enabled else 'muted' }}">{{ '启用' if g.enabled else '停用' }}</span></h2>
+      <p>请求模型名：<code>{{ g.name }}</code> · {{ g.members|length }} 个成员</p>
+    </div>
+    <div class="row-actions">
+      <form method="post" action="/admin/virtuals/{{ g.id }}/toggle" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn" type="submit">{{ '停用' if g.enabled else '启用' }}</button>
+      </form>
+      <form method="post" action="/admin/virtuals/{{ g.id }}/delete" class="inline-form" data-confirm="确认删除虚拟模型组 {{ g.name }}？">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="mini-btn danger" type="submit">删除</button>
+      </form>
+    </div>
+  </div>
+
+  {% if g.members %}
+  <div class="table-wrap">
+    <table class="table compact">
+      <thead><tr><th>平台</th><th>上游模型</th><th>权重</th><th>平台剩余积分</th><th>实测单价/1K</th><th>状态</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for m in g.members %}
+        {% set st = platform_stats.get(m.provider_id, {}) %}
+        {% set cost = (costs.get(m.provider_id, {}) or {}).get(m.model, {}) %}
+        <tr>
+          <td><a class="link" href="/admin/platforms/{{ m.provider_id }}">{{ provider_names.get(m.provider_id, m.provider_id) }}</a><div class="muted small">{{ m.provider_id }}</div></td>
+          <td><span class="model-tag">{{ (provider_regions.get(m.provider_id, '')) ~ ':' if provider_regions.get(m.provider_id) else '' }}{{ m.model }}</span></td>
+          <td>{{ m.weight }}</td>
+          <td>{{ fmt_credits(st.get('remaining')) }}</td>
+          <td>{% if cost.get('cost_per_1k') is not none %}{{ '%.4f'|format(cost.get('cost_per_1k')|float) }}{% else %}—{% endif %}</td>
+          <td><span class="badge {{ 'success' if m.enabled else 'muted' }}">{{ '启用' if m.enabled else '停用' }}</span></td>
+          <td class="right">
+            <form method="post" action="/admin/virtuals/members/{{ m.id }}/toggle" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn" type="submit">{{ '停用' if m.enabled else '启用' }}</button>
+            </form>
+            <form method="post" action="/admin/virtuals/members/{{ m.id }}/delete" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="mini-btn danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state small"><p>还没有成员，从下方添加一个平台模型。</p></div>
+  {% endif %}
+
+  <form method="post" action="/admin/virtuals/{{ g.id }}/members/add" class="inline-add member-form">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <select name="provider_id" data-role="provider" required>
+      <option value="">选择平台</option>
+      {% for p in providers %}
+      <option value="{{ p.id }}" data-region="{{ p.region }}">{{ p.name }}（{{ p.id }}）</option>
+      {% endfor %}
+    </select>
+    <select data-role="model-select" required>
+      {% for pm in platform_models %}
+      <option value="{{ pm.model_id }}" data-provider="{{ pm.provider_id }}">
+        {{ pm.region }}:{{ pm.model_id }} — {{ pm.display_name }}
+      </option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="model" data-role="model-value">
+    <input name="weight" type="number" min="1" max="100" value="1" style="max-width:90px">
+    <button class="btn btn-ghost" type="submit">添加成员</button>
+  </form>
+  <p class="hint" data-role="empty-hint" hidden>该平台还没有已同步模型，请先到「平台聚合」同步模型。</p>
+</section>
+{% endfor %}
+
+{% if not groups %}
+<section class="panel"><div class="empty-state"><div class="empty-icon">＋</div><h3>还没有虚拟模型组</h3><p>创建后客户端只请求组名，由代理在多个平台模型之间分摊。</p></div></section>
+{% endif %}
+
+<script>
+(function () {
+  document.querySelectorAll('.member-form').forEach((form) => {
+    const provider = form.querySelector('[data-role="provider"]');
+    const select = form.querySelector('[data-role="model-select"]');
+    const value = form.querySelector('[data-role="model-value"]');
+    const hint = form.parentElement.querySelector('[data-role="empty-hint"]');
+
+    function refresh() {
+      const pid = provider.value;
+      let first = null;
+      for (const opt of select.options) {
+        const match = opt.dataset.provider === pid;
+        opt.hidden = !match;
+        opt.disabled = !match;
+        if (match && !first) first = opt;
+      }
+      const count = Array.from(select.options).filter((o) => o.dataset.provider === pid).length;
+      if (hint) hint.hidden = count > 0;
+      if (first) select.value = first.value;
+      value.value = select.value || '';
+    }
+
+    provider.addEventListener('change', refresh);
+    select.addEventListener('change', () => { value.value = select.value; });
+    form.addEventListener('submit', (e) => {
+      value.value = select.value;
+      if (!value.value) {
+        e.preventDefault();
+        alert('请选择上游模型');
+      }
+    });
+    refresh();
+  });
+})();
+</script>
+{% endblock %}
