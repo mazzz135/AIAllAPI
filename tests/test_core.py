@@ -3802,3 +3802,91 @@ def test_qoder_openai_shaped_error_frame_stays_error_frame():
     assert len(frames) == 1
     assert "rate limited" in frames[0]
     assert "api_error" in frames[0]
+
+
+# ---------------------------------------------------------------------------
+# 客户端指纹伪装：与真实客户端抓包/反编译结果逐项对齐。
+# 这些头缺失会被上游判定为「第三方反向代理 / 非官方客户端」，
+# 典型后果是活动槽不下发、能力降级、甚至封号。
+# ---------------------------------------------------------------------------
+
+
+def test_lobster_request_headers_carry_client_identity():
+    """LobsterAI 聊天与签到请求必须带完整客户端身份头族。"""
+    from app.providers import lobster
+
+    assert lobster.CLIENT_CAPABILITIES == (
+        "virtual-models-v1,kimi-k3-agentic-v1,"
+        "thinking-level-control-v1,upstream-error-details-v1"
+    )
+    headers = lobster.LobsterProvider._headers({"access_token": "tok"}, "2026.11.6")
+    assert headers["User-Agent"] == "LobsterAI/2026.11.6"
+    assert headers["X-LobsterAI-Client-Version"] == "2026.11.6"
+    assert headers["X-LobsterAI-Client-Capabilities"] == lobster.CLIENT_CAPABILITIES
+    assert headers["Authorization"] == "Bearer tok"
+
+
+def test_lobster_activity_params_match_client_protocol():
+    """活动槽四个查询参数缺任何一个都会被判为非客户端。"""
+    from app.providers import lobster
+
+    assert lobster.ACTIVITY_PLACEMENT == "desktop_sidebar"
+    assert lobster.ACTIVITY_CONTAINER_API_VERSION == "2"
+    assert lobster.CLIENT_PLATFORM == "win32"
+
+
+def test_workbuddy_common_headers_carry_version_and_platform():
+    """WorkBuddy / CodeBuddy 公共头必须带 clientVersion 与 platform。"""
+    from app.providers.workbuddy import DESKTOP_CN, DESKTOP_GLOBAL, WorkBuddyProvider
+
+    provider = WorkBuddyProvider.__new__(WorkBuddyProvider)
+
+    cn = provider._common({"id": "codebuddy", "region": "cn", "config": {}})
+    assert cn["clientVersion"] == DESKTOP_CN
+    assert cn["platform"] == "win32"
+
+    gl = provider._common({"id": "workbuddy", "region": "global", "config": {}})
+    assert gl["clientVersion"] == DESKTOP_GLOBAL
+    assert gl["platform"] == "win32"
+
+    custom = provider._common(
+        {"id": "workbuddy", "region": "global", "config": {"client_version": "9.9.9", "platform": "darwin"}}
+    )
+    assert custom["clientVersion"] == "9.9.9"
+    assert custom["platform"] == "darwin"
+
+
+def test_qoder_sign_headers_look_like_official_client():
+    """Qoder 签名头必须是官方客户端形态（clientType=10 + Qoder UA）。"""
+    from app.providers import qoder
+
+    session = qoder.build_session(
+        {"uid": "u-1234567890", "access_token": "dt-test", "security_oauth_token": "dt-test"}
+    )
+    headers = qoder.sign(session, "{}", "https://gateway.qoder.com.cn/algo/api/v2/x")
+    assert headers["Cosy-ClientType"] == "10"
+    assert headers["User-Agent"].startswith("Qoder/")
+    assert headers["Cosy-MachineOS"] == "Windows_NT"
+    assert "undici" not in headers["User-Agent"]
+    for key in ("Cosy-MachineId", "Cosy-MachineToken", "Cosy-MachineType"):
+        assert headers[key]
+
+
+def test_trae_ide_headers_match_desktop_client_shape():
+    """Trae IDE 头必须是 VSCode 内核形态，不能是裸 Trae/x.y.z。"""
+    import httpx
+
+    from app.config import Settings
+    from app.upstream.client import TraeClient
+
+    client = TraeClient(Settings(data_dir=Path(tempfile.mkdtemp())), httpx.AsyncClient())
+    headers = client.ide_headers(
+        {"access_token": "tok", "uid": "u1", "device_id": "dev", "machine_id": "mid"}
+    )
+    assert headers["User-Agent"].startswith("VSCode ")
+    assert "(TRAE SOLO CN)" in headers["User-Agent"]
+    assert headers["x-ide-version"]
+    assert headers["x-ide-version-code"]
+    assert headers["X-Ide-Token"] == "tok"
+    assert headers["x-device-id"] == "dev"
+    assert headers["x-machine-id"] == "mid"

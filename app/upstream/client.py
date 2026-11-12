@@ -159,7 +159,9 @@ class TraeClient:
             "x-system-type": "Windows",
             "Accept": "text/event-stream" if sse else "application/json",
             "Connection": "keep-alive",
-            "User-Agent": f"Trae/{self.settings.ide_version}",
+            # 真实客户端 UA 形如 `VSCode 1.107.1 (TRAE SOLO CN)`，纯 `Trae/x.y.z`
+            # 与 IDE 内核版本对不上，会被风控判为非客户端。
+            "User-Agent": f"VSCode {self.settings.ide_version} (TRAE SOLO CN)",
         }
         return headers
 

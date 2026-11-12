@@ -83,6 +83,11 @@ class WorkBuddyProvider:
 
     def _common(self, provider: dict[str, Any]) -> dict[str, str]:
         origin = self.origin(provider)
+        cfg = provider.get("config") or {}
+        # 上游会按客户端版本 / 平台投放能力与配额；缺这两项会被判为非官方客户端。
+        default_version = DESKTOP_GLOBAL if self.region(provider) == "global" else DESKTOP_CN
+        client_version = str(cfg.get("client_version") or default_version)
+        platform_name = str(cfg.get("platform") or "win32")
         return {
             "Content-Type": "application/json",
             "Accept": "application/json, text/plain, */*",
@@ -90,6 +95,8 @@ class WorkBuddyProvider:
             "Origin": origin,
             "Referer": origin + "/",
             "User-Agent": f"CLI/{CLI_VERSION} CodeBuddy/{CLI_VERSION}",
+            "clientVersion": client_version,
+            "platform": platform_name,
         }
 
     def _identity(self, provider: dict[str, Any], cred: dict[str, Any]) -> dict[str, str]:

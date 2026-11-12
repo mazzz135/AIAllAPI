@@ -17,8 +17,8 @@ from ..credit_packs import make_pack, normalize_packs, to_epoch
 from .base import ProviderError, StreamChunk, empty_usage, merge_usage
 
 COSY_VERSION = "1.1.75"
-COSY_USER_AGENT = "undici"
-COSY_MACHINE_OS = "x86_64_linux"
+COSY_USER_AGENT = "Qoder/1.1.75"
+COSY_MACHINE_OS = "Windows_NT"
 COSY_CLIENT_IP = "169.254.198.161"
 DEVICE_CLIENT_ID = "732aef47-9cf2-46a2-95fe-4cebb5d0d1fa"
 
@@ -183,7 +183,9 @@ def sign(session: dict[str, Any], body: str, raw_url: str, now: int | None = Non
         "Authorization": f"Bearer COSY.{payload}.{digest}",
         "Cache-Control": "no-cache",
         "Content-Type": "application/json",
-        "Cosy-ClientType": "5",
+        # 与真实 Qoder 客户端一致：IDE / CLI 均为 clientType=10。
+        # 旧值 5 是浏览器 web 端，会被网关标记为非官方客户端。
+        "Cosy-ClientType": "10",
         "Cosy-Data-Policy": "agree",
         "Cosy-Date": date,
         "Cosy-Key": session["cosy_key"],

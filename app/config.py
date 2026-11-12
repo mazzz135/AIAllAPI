@@ -62,8 +62,8 @@ class Settings:
     first_event_timeout: float = field(
         default_factory=lambda: float(_env("TRAEAPI_FIRST_EVENT_TIMEOUT", "60"))
     )
-    ide_version: str = field(default_factory=lambda: _env("TRAEAPI_IDE_VERSION", "3.4.0"))
-    ide_version_code: str = field(default_factory=lambda: _env("TRAEAPI_IDE_VERSION_CODE", "20260716"))
+    ide_version: str = field(default_factory=lambda: _env("TRAEAPI_IDE_VERSION", "1.107.1"))
+    ide_version_code: str = field(default_factory=lambda: _env("TRAEAPI_IDE_VERSION_CODE", "20261110"))
     app_id: str = field(
         default_factory=lambda: _env("TRAEAPI_APP_ID", "6eefa01c-1036-4c7e-9ca5-d891f63bfcd8")
     )

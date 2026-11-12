@@ -12,12 +12,29 @@ from ..config import Settings
 from ..credit_packs import make_pack, normalize_packs
 from .base import ProviderError, StreamChunk, empty_usage, merge_usage
 
+# ---------------------------------------------------------------------- 客户端指纹
 # 兜底版本：仅在官方更新接口不可用时使用。
 # 上游按 clientVersion 决定是否投放活动槽，版本过旧会返回 slotState=empty。
 CLIENT_VERSION = "2026.11.6"
 CLIENT_UA = f"LobsterAI/{CLIENT_VERSION}"
 UPDATE_API = "https://api-overmind.youdao.com/openapi/get/luna/hardware/lobsterai/prod/update"
 VERSION_TTL_SECONDS = 6 * 3600
+
+# 客户端能力声明：与真实 Electron 客户端 buildUpstreamRequestHeaders 逐项一致。
+# 上游据此判断是否下发虚拟模型 / 思维链 / 上游错误详情等能力，缺项会被降级或拒绝。
+CLIENT_CAPABILITIES = ",".join(
+    [
+        "virtual-models-v1",
+        "kimi-k3-agentic-v1",
+        "thinking-level-control-v1",
+        "upstream-error-details-v1",
+    ]
+)
+# 活动槽容器协议：desktop_sidebar 用 NativeDailyCheckInV1(=2)，desktop_startup_modal 用 3。
+ACTIVITY_PLACEMENT = "desktop_sidebar"
+ACTIVITY_CONTAINER_API_VERSION = "2"
+# 真实客户端上报 process.platform；网关固定按 Windows 桌面端伪装。
+CLIENT_PLATFORM = "win32"
 
 
 class LobsterProvider:
@@ -61,6 +78,8 @@ class LobsterProvider:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": f"LobsterAI/{version or CLIENT_VERSION}",
+            "X-LobsterAI-Client-Version": version or CLIENT_VERSION,
+            "X-LobsterAI-Client-Capabilities": CLIENT_CAPABILITIES,
         }
         if cred and cred.get("access_token"):
             headers["Authorization"] = "Bearer " + str(cred["access_token"])
@@ -302,8 +321,19 @@ class LobsterProvider:
             body.pop("tool_choice", None)
         headers = self._headers(cred)
         headers["Accept"] = "text/event-stream, application/json"
-        headers["X-LobsterAI-Client-Capabilities"] = "kimi-k3-agentic-v1"
+        headers["X-LobsterAI-Client-Capabilities"] = CLIENT_CAPABILITIES
         headers["X-LobsterAI-Client-Version"] = await self.client_version(provider)
+        # 官方客户端为每个出站 LLM 请求生成 W3C traceparent 并由服务端记录用量，
+        # 缺失时上游会把这批请求判为非客户端来源。
+        headers["traceparent"] = (
+            "00-"
+            + uuid.uuid4().hex
+            + "-"
+            + uuid.uuid4().hex[:16]
+            + "-01"
+        )
+        headers["x-lobster-session-id"] = str(uuid.uuid4())
+        headers["x-lobster-turn-id"] = uuid.uuid4().hex
         req = self.http.build_request(
             "POST",
             self.base(provider) + "/api/proxy/v1/chat/completions",
@@ -477,10 +507,10 @@ class LobsterProvider:
             slot = await self.http.get(
                 base + "/api/client-activities/slot",
                 params={
-                    "placement": "desktop_sidebar",
+                    "placement": ACTIVITY_PLACEMENT,
                     "clientVersion": version,
-                    "containerApiVersion": "2",
-                    "platform": "win32",
+                    "containerApiVersion": ACTIVITY_CONTAINER_API_VERSION,
+                    "platform": CLIENT_PLATFORM,
                 },
                 headers=headers,
                 timeout=30,
@@ -513,7 +543,12 @@ class LobsterProvider:
         try:
             ctx = await self.http.get(
                 f"{base}/api/client-activities/{code}/context",
-                params={"configRevision": rev},
+                params={
+                    "configRevision": rev,
+                    "clientVersion": version,
+                    "containerApiVersion": ACTIVITY_CONTAINER_API_VERSION,
+                    "platform": CLIENT_PLATFORM,
+                },
                 headers=headers,
                 timeout=30,
             )
