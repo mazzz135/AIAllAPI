@@ -45,8 +45,10 @@ def create_app(custom_settings: Settings | None = None) -> FastAPI:
         version=cfg.version,
         description="Trae 国服账号的本地 OpenAI 兼容 API",
         lifespan=lifespan,
-        docs_url="/docs",
+        # 默认关闭自动文档与 OpenAPI schema，避免公开部署时暴露全部接口清单。
+        docs_url=None,
         redoc_url=None,
+        openapi_url=None,
     )
     app.add_middleware(
         CORSMiddleware,

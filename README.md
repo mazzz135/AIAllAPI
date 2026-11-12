@@ -219,8 +219,9 @@ print(resp.choices[0].message.content)
 | GET | `/v1/status` | 账号池、模型成本、预算、限流模型等状态 |
 | GET | `/v1/usage` | 当前 API Key 今日用量与最近记录 |
 | GET | `/metrics` | Prometheus 文本格式 0.0.4，默认关闭，开启后需 API Key |
-| GET | `/docs` | FastAPI 自动文档 |
 | GET | `/` | 跳转 `/admin` |
+
+> 自动文档已关闭：`/docs`、`/redoc`、`/openapi.json` 均返回 404，避免公开部署时泄露接口清单。
 
 ---
 
@@ -491,6 +492,7 @@ Token 来自上游 `token_usage` 事件；上游未返回时日志中为 0。
 - 上游 access/refresh/session 凭据使用 Fernet 加密后落库
 - API Key 同时保存哈希与加密值，便于管理台展示
 - 强制路由头、CORS、代理信任均可配置
+- FastAPI 自动文档与 OpenAPI schema 默认关闭（`/docs`、`/redoc`、`/openapi.json` 均 404）
 - 公网部署请开启 HTTPS，建议加 IP 白名单
 - 不要公开 `data/secret.key`、`data/traeapi.db`、Refresh Token、会话 Cookie
 

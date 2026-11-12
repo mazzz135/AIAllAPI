@@ -121,6 +121,17 @@ def test_admin_login_and_pages(app_client):
     assert 'name="auto_checkin"' not in settings_page.text
 
 
+def test_docs_endpoints_disabled(app_client):
+    """自动文档与 OpenAPI schema 关闭，避免公开部署暴露接口清单。"""
+    app, client = app_client
+    assert app.docs_url is None
+    assert app.redoc_url is None
+    assert app.openapi_url is None
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path, follow_redirects=False).status_code == 404, path
+    assert client.get("/health").status_code == 200
+
+
 def test_openai_chat_stream_and_non_stream(app_client, monkeypatch):
     app, client = app_client
     ctx = app.state.ctx
