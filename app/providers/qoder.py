@@ -103,6 +103,15 @@ def _machine_type(uid: str) -> str:
     return hashlib.md5(("machinetype:" + uid).encode()).hexdigest().replace("-", "")[:18]
 
 
+def _new_machine_token() -> str:
+    """生成一个与真实客户端同格式的设备安装令牌。
+
+    真实值是 base64url(32 随机字节) 去掉 padding，固定 43 字符。
+    每个账号只生成一次并持久化，之后长期复用。
+    """
+    return base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
+
+
 def _pkcs7_pad(data: bytes, size: int = 16) -> bytes:
     pad = size - len(data) % size
     return data + bytes([pad]) * pad
@@ -123,7 +132,13 @@ def _aes_cbc_encrypt(plain: bytes, key: bytes) -> bytes:
     return encryptor.update(_pkcs7_pad(plain)) + encryptor.finalize()
 
 
-def build_session(cred: dict[str, Any]) -> dict[str, Any]:
+def build_session(cred: dict[str, Any], *, machine_token: str = "") -> dict[str, Any]:
+    """构造 Qoder COSY 会话。
+
+    ``machine_token`` 一旦确定就必须在账号生命周期内保持不变：真实客户端首次安装
+    时随机生成并持久化到本地配置。每次请求都换新值反而更像脚本（真实设备指纹
+    不会变），所以这里优先使用调用方传入的持久化值，仅在首次生成时随机。
+    """
     uid = str(cred.get("uid") or cred.get("aid") or "")
     token = str(cred.get("security_oauth_token") or cred.get("access_token") or "")
     if not uid or not token:
@@ -147,8 +162,10 @@ def build_session(cred: dict[str, Any]) -> dict[str, Any]:
     return {
         "uid": uid,
         "token": token,
+        # machine_id / machine_type 保持由 uid 派生的稳定值；
+        # machine_token 是「设备安装令牌」，必须按账号持久化随机值。
         "machine_id": _machine_id(uid),
-        "machine_token": _machine_token(uid),
+        "machine_token": machine_token or _new_machine_token(),
         "machine_type": _machine_type(uid),
         "cosy_key": cosy_key,
         "info": info,
@@ -340,9 +357,10 @@ class QoderProvider:
     账号可直接导入 Qoder CLI 的 user JSON，或填写 PAT + uid。
     """
 
-    def __init__(self, settings: Settings, http: httpx.AsyncClient):
+    def __init__(self, settings: Settings, http: httpx.AsyncClient, credential_saver=None):
         self.settings = settings
         self.http = http
+        self._credential_saver = credential_saver
 
     def base(self, provider: dict[str, Any]) -> str:
         return (provider.get("base_url") or "").rstrip("/")
@@ -475,13 +493,30 @@ class QoderProvider:
             base + "/api/v2/model/list?Encode=1",
         ]
 
-    @staticmethod
-    def session(account: dict[str, Any]) -> dict[str, Any]:
+    async def session(self, account: dict[str, Any]) -> dict[str, Any]:
+        """获取或生成 Qoder 会话。
+
+        首次调用时生成随机 machine_token 并持久化到数据库；后续复用。
+        这样每个账号有独立且长期稳定的设备指纹，避免被识别为脚本。
+        """
         cred = account.get("credential") or {}
         cached = cred.get("cosy_session")
         if isinstance(cached, dict) and cached.get("cosy_key") and cached.get("uid") == str(cred.get("uid") or ""):
             return cached
-        return build_session(cred)
+
+        # 复用凭据里已持久化的 machine_token（兼容旧账号），没有才随机生成。
+        token = str(cred.get("machine_token") or "")
+        sess = build_session(cred, machine_token=token)
+
+        if self._credential_saver and account.get("id"):
+            new_cred = dict(cred)
+            new_cred["machine_token"] = sess["machine_token"]
+            new_cred["cosy_session"] = sess
+            await self._credential_saver(
+                int(account["id"]), new_cred, int(cred.get("expires_at") or 0)
+            )
+
+        return sess
 
     async def _request(
         self,
@@ -491,7 +526,7 @@ class QoderProvider:
         url: str,
         payload: dict[str, Any] | None = None,
     ) -> httpx.Response:
-        sess = self.session(account)
+        sess = await self.session(account)
         body = ""
         if payload is not None:
             body = encode_body(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
@@ -662,7 +697,7 @@ class QoderProvider:
     async def chat_stream(
         self, provider: dict[str, Any], account: dict[str, Any], payload: dict[str, Any]
     ) -> AsyncIterator[StreamChunk]:
-        sess = self.session(account)
+        sess = await self.session(account)
         url = self.chat_url(provider)
         body = encode_body(
             json.dumps(self._chat_payload(payload), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -739,9 +774,19 @@ class QoderProvider:
         fp = cred.get("checkin_fingerprint") or cred.get("fingerprint") or {}
         if not isinstance(fp, dict):
             fp = {}
-        token = str(fp.get("machine_token") or cred.get("machine_token") or "")
+
+        # 优先顺序：1) checkin_fingerprint 2) cosy_session (新持久化) 3) credential.machine_token 4) 派生
+        token = str(fp.get("machine_token") or "")
         if not token:
-            return {}
+            session = cred.get("cosy_session") or {}
+            token = str(session.get("machine_token") or "")
+        if not token:
+            token = str(cred.get("machine_token") or "")
+        if not token:
+            # 兜底：按 uid 派生（兼容旧数据）
+            uid = str(cred.get("uid") or cred.get("aid") or "")
+            token = _machine_token(uid)
+
         headers = {
             "Cosy-Version": str(fp.get("version") or COSY_VERSION),
             "Cosy-MachineId": str(fp.get("machine_id") or cred.get("machine_id") or ""),
@@ -749,7 +794,7 @@ class QoderProvider:
             "Cosy-MachineType": str(fp.get("machine_type") or cred.get("machine_type") or ""),
             "Cosy-MachineCode": str(fp.get("machine_code") or ""),
             "Cosy-MachineHostname": str(fp.get("hostname") or "localhost"),
-            "Cosy-MachineOS": str(fp.get("machine_os") or "x86_64_linux"),
+            "Cosy-MachineOS": str(fp.get("machine_os") or "Windows_NT"),  # 改为 Windows
         }
         return {key: value for key, value in headers.items() if value}
 

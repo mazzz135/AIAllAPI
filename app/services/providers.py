@@ -250,11 +250,17 @@ class ProviderService:
         return result
 
     def adapter(self, provider: dict[str, Any]):
-        if provider.get("kind") == "lobster":
+        kind = provider.get("kind") or ""
+        if kind == "lobster":
             from ..providers.lobster import LobsterProvider
 
             return LobsterProvider(self.settings, self.http, credential_saver=self.update_credential)
-        return adapter_for(self.settings, self.http, provider.get("kind", ""))
+        if kind.startswith("qoder"):
+            from ..providers.qoder import QoderProvider
+
+            # Qoder 需要把随机生成的 machine_token 持久化回账号凭据。
+            return QoderProvider(self.settings, self.http, credential_saver=self.update_credential)
+        return adapter_for(self.settings, self.http, kind)
 
     # ------------------------------------------------------------------ models
     def add_model(
