@@ -339,9 +339,11 @@ class AccountPool:
         total_tokens: int = 0,
     ) -> None:
         now = _now()
+        # 成功后必须清空 last_error，否则管理台/平台聚合状态栏会一直显示上次的
+        # 历史报错（例如已恢复的 11128 / 上游 HTTP 400），与实际可用状态不符。
         self.db.execute(
             "UPDATE provider_accounts SET fail_streak=0, soft_streak=0, cooldown_until=0, "
-            "cooldown_kind='', last_used_at=?, updated_at=? WHERE id=?",
+            "cooldown_kind='', last_error='', last_used_at=?, updated_at=? WHERE id=?",
             (now, now, int(account_id)),
         )
         if model and credits_delta is not None and float(credits_delta) >= 0 and int(total_tokens or 0) > 0:
