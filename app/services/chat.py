@@ -463,7 +463,6 @@ class ChatService:
                         if extracted["total_tokens"] or extracted["prompt_tokens"] or extracted["completion_tokens"]:
                             usage = extracted
                             usage_snapshot = dict(extracted)
-                            usage_snapshot = dict(extracted)
                     elif event.event == "done":
                         finish = str(data.get("finish_reason") or "stop")
                         if data.get("_done"):
@@ -601,7 +600,6 @@ class ChatService:
                         if extracted["total_tokens"] or extracted["prompt_tokens"] or extracted["completion_tokens"]:
                             usage = extracted
                             usage_snapshot = dict(extracted)
-                            usage_snapshot = dict(extracted)
                     elif event.event == "done":
                         finish = str(data.get("finish_reason") or "stop")
                         if data.get("_done"):
@@ -637,7 +635,31 @@ class ChatService:
                 logged = True
                 return
             except (GeneratorExit, asyncio.CancelledError):
-                # 客户端断开：finally 里补写日志
+                # 客户端断开：生成器在 yield 处终止，正常路径的 _finalize 走不到，
+                # 这里补写一条 cancelled 记录（仅当已经产出过内容时）。
+                if not logged and emitted:
+                    try:
+                        await asyncio.shield(self._finalize(
+                            request_id=request_id,
+                            api_key=api_key,
+                            account=account,
+                            endpoint=endpoint,
+                            model=body_model,
+                            caps=body_caps,
+                            stream=True,
+                            usage=usage_snapshot,
+                            started=started,
+                            ip=ip,
+                            credits_before=credits_before_snapshot,
+                            provider_id=provider_id,
+                            virtual_model=virtual_model,
+                            status="cancelled",
+                            error="客户端提前断开",
+                            ttft_ms=int((first_token_at - started) * 1000) if first_token_at else 0,
+                        ))
+                        logged = True
+                    except BaseException:
+                        pass
                 raise
             except TraeError as exc:
                 last_error = exc
@@ -672,28 +694,5 @@ class ChatService:
                 return
             finally:
                 self.accounts.release(sem)
-                # 兜底：客户端中途断开时正常路径的 _finalize 不会执行
-                if not logged and emitted:
-                    try:
-                        await self._finalize(
-                            request_id=request_id,
-                            api_key=api_key,
-                            account=account,
-                            endpoint=endpoint,
-                            model=body_model,
-                            caps=body_caps,
-                            stream=True,
-                            usage=usage_snapshot,
-                            started=started,
-                            ip=ip,
-                            credits_before=credits_before_snapshot,
-                            provider_id=provider_id,
-                            virtual_model=virtual_model,
-                            status="cancelled",
-                            error="客户端提前断开",
-                            ttft_ms=int((first_token_at - started) * 1000) if first_token_at else 0,
-                        )
-                    except BaseException:
-                        pass
         if last_error:
             yield self._error_frame(str(last_error), "upstream_error")
