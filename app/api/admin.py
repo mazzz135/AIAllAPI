@@ -876,13 +876,16 @@ async def platform_detail(request: Request, provider_id: str, admin: dict = Depe
         " FROM usage_logs WHERE provider_id=?",
         (provider_id,),
     )
+    # sqlite3.Row 不支持 .get()，统一转 dict 再取
+    est_today = dict(est_row) if est_row else {}
+    est_sum = dict(est_all) if est_all else {}
     estimated = {
-        "today": float((est_row or {}).get("est") or 0) if est_row else 0.0,
-        "today_tokens": int((est_row or {}).get("tokens") or 0) if est_row else 0,
-        "today_calls": int((est_row or {}).get("n") or 0) if est_row else 0,
-        "all": float((est_all or {}).get("est") or 0) if est_all else 0.0,
-        "all_tokens": int((est_all or {}).get("tokens") or 0) if est_all else 0,
-        "all_calls": int((est_all or {}).get("n") or 0) if est_all else 0,
+        "today": float(est_today.get("est") or 0),
+        "today_tokens": int(est_today.get("tokens") or 0),
+        "today_calls": int(est_today.get("n") or 0),
+        "all": float(est_sum.get("est") or 0),
+        "all_tokens": int(est_sum.get("tokens") or 0),
+        "all_calls": int(est_sum.get("n") or 0),
     }
     return _render(
         request,
