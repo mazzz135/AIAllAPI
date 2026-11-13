@@ -41,7 +41,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 @dataclass
 class Settings:
     app_name: str = field(default_factory=lambda: _env("AIALL_APP_NAME", "AIAll API"))
-    version: str = "0.0.1"
+    version: str = "0.01"
     host: str = field(default_factory=lambda: _env("TRAEAPI_HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: _env_int("TRAEAPI_PORT", 2999))
     data_dir: Path = field(
