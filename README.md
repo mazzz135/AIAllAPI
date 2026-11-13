@@ -35,6 +35,23 @@
 
 ---
 
+## 更新日志
+
+### v0.0.1 (2026-11-13)
+
+#### 🐛 修复
+- **流式调用客户端提前断开时补写用量日志**
+  - 问题：mimo-v2.6-flash 等模型能跑通但后台无记录
+  - 根因：`chat.stream` 在 `yield [DONE]` 后调用 `_finalize`，客户端断开使生成器在 yield 处终止，`_finalize` 永不执行；且 `_finalize` 里的网络请求被 `CancelledError` 中断，日志写入被跳过
+  - 修复：增加 try/finally 兜底，捕获 `GeneratorExit`/`CancelledError` 补写 cancelled 记录，实时同步 usage 快照
+  
+#### 📊 功能更新
+- **用量统计图移至概览页**
+  - 从平台聚合页移至 `/admin/dashboard`
+  - 替换旧柱状图为 SVG 趋势图 + 平台占比条形图 + 模型 Top 条形图
+  - 支持 7/14/30 天时间范围切换
+  - 零外部依赖，纯内联 SVG 绘制
+
 ## 核心特性
 
 ### 协议与接口
