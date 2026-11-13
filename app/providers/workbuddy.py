@@ -374,7 +374,8 @@ class WorkBuddyProvider:
     @staticmethod
     def prepare_body(payload: dict[str, Any]) -> dict[str, Any]:
         body = dict(payload)
-        body.pop("stream_options", None)
+        # 保留 stream_options，让上游决定是否返回 usage（OpenAI 兼容接口）
+        # body.pop("stream_options", None)  # ← 删除此行以支持 include_usage
         body["stream"] = True
         body.setdefault("cache_retention", "long")
         messages = body.get("messages")

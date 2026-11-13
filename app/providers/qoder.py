@@ -607,7 +607,7 @@ class QoderProvider:
     def _chat_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = dict(payload)
         body.pop("stream", None)
-        body.pop("stream_options", None)
+        # 保留 stream_options，让上游决定是否返回 usage
         return body
 
     async def chat_complete(

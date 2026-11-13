@@ -315,7 +315,7 @@ class LobsterProvider:
         cred = await self.ensure(provider, account)
         body = dict(payload)
         body["stream"] = True
-        body.pop("stream_options", None)
+        # 保留 stream_options，让上游决定是否返回 usage
         choice = body.get("tool_choice")
         if isinstance(choice, str) and choice in ("", "none"):
             body.pop("tool_choice", None)
