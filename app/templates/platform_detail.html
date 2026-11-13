@@ -49,6 +49,23 @@
   {% if provider.last_error %}<div class="flash flash-err">{{ provider.last_error[:300] }}</div>{% endif %}
 </section>
 
+<!-- 估算成本（上游不返回真实扣费时） -->
+{% if estimated %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>用量统计（估算）</h2><p>上游未返回 credits_delta 时按 price_factor 估算，仅供参考</p></div>
+  </div>
+  <div class="stat-grid" style="margin-bottom:14px">
+    <div class="stat-card"><div class="stat-label">今日调用</div><div class="stat-value">{{ estimated.today_calls }}</div></div>
+    <div class="stat-card"><div class="stat-label">今日 Token</div><div class="stat-value">{{ fmt_num(estimated.today_tokens) }}</div></div>
+    <div class="stat-card"><div class="stat-label">今日估算</div><div class="stat-value" style="color:#ea580c">${{ "%.2f"|format(estimated.today) }}</div></div>
+    <div class="stat-card"><div class="stat-label">累计调用</div><div class="stat-value">{{ estimated.all_calls }}</div></div>
+    <div class="stat-card"><div class="stat-label">累计 Token</div><div class="stat-value">{{ fmt_num(estimated.all_tokens) }}</div></div>
+    <div class="stat-card"><div class="stat-label">累计估算</div><div class="stat-value" style="color:#ea580c">${{ "%.2f"|format(estimated.all) }}</div></div>
+  </div>
+</section>
+{% endif %}
+
 <section class="panel" id="add-account">
   <div class="panel-head">
     <div><h2>手动导入凭据 / PAT</h2><p>适用于已有 access_token / PAT 的场景，无需走网页授权</p></div>

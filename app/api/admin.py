@@ -861,6 +861,29 @@ async def platform_detail(request: Request, provider_id: str, admin: dict = Depe
         return sum(values) if values else -1
 
     costs = ctx.pool.costs(provider_id)
+
+    # 估算成本汇总（上游不返回真实扣费时的参考值）
+    today_start = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")))
+    est_row = ctx.db.query_one(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(credits_estimated),0) AS est,"
+        " COALESCE(SUM(total_tokens),0) AS tokens"
+        " FROM usage_logs WHERE provider_id=? AND created_at>=?",
+        (provider_id, today_start),
+    )
+    est_all = ctx.db.query_one(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(credits_estimated),0) AS est,"
+        " COALESCE(SUM(total_tokens),0) AS tokens"
+        " FROM usage_logs WHERE provider_id=?",
+        (provider_id,),
+    )
+    estimated = {
+        "today": float((est_row or {}).get("est") or 0) if est_row else 0.0,
+        "today_tokens": int((est_row or {}).get("tokens") or 0) if est_row else 0,
+        "today_calls": int((est_row or {}).get("n") or 0) if est_row else 0,
+        "all": float((est_all or {}).get("est") or 0) if est_all else 0.0,
+        "all_tokens": int((est_all or {}).get("tokens") or 0) if est_all else 0,
+        "all_calls": int((est_all or {}).get("n") or 0) if est_all else 0,
+    }
     return _render(
         request,
         "platform_detail.html",
@@ -869,6 +892,7 @@ async def platform_detail(request: Request, provider_id: str, admin: dict = Depe
         accounts=accounts,
         models=models,
         costs=costs,
+        estimated=estimated,
         now=int(time.time()),
         totals={
             "remaining": _sum("credits"),
