@@ -631,6 +631,32 @@ class RouterService:
             return OpenAIError(str(exc), status_code=429, error_type="rate_limit_error", code="rate_limit")
         return OpenAIError(str(exc), status_code=502, error_type="api_error", code="upstream_error")
 
+    def _estimate_cost(self, provider: dict[str, Any], model: str, usage: dict[str, Any]) -> float:
+        """按模型 price_factor 与平台基础费率估算积分消耗。
+
+        上游（如 Qoder）不返回 credits_delta 时，用此值填充 credits_estimated，
+        让成本统计有参考数据。数值仅作估算，真实扣费以平台账单为准。
+        """
+        try:
+            total_tokens = int(usage.get("total_tokens") or 0)
+            prompt_tokens = int(usage.get("prompt_tokens") or 0)
+            completion_tokens = int(usage.get("completion_tokens") or 0)
+            if total_tokens <= 0:
+                total_tokens = prompt_tokens + completion_tokens
+            if total_tokens <= 0:
+                return 0.0
+            price_factor = 1.0
+            for item in provider.get("models") or []:
+                if str(item.get("id") or "") == model or str(item.get("upstream") or "") == model:
+                    price_factor = float(item.get("price_factor") or 1.0)
+                    break
+            # 基础费率：每 1K tokens 消耗的积分，可在平台配置里覆盖
+            cfg = provider.get("config") or {}
+            base_rate = float(cfg.get("credit_per_1k_tokens") or 0.01)
+            return round(total_tokens / 1000.0 * base_rate * price_factor, 4)
+        except Exception:
+            return 0.0
+
     def _log_custom(
         self,
         api_key: dict[str, Any],
@@ -650,11 +676,13 @@ class RouterService:
         latency_ms = int((time.time() - started) * 1000)
         first_token_ms = int(ttft_ms or latency_ms)
         completion_ms = max(0, latency_ms - first_token_ms) if stream else latency_ms
+        # 上游未返回真实扣费时，按模型 price_factor 估算，避免成本统计恒为 0
+        estimated = self._estimate_cost(provider, model, usage)
         self.usage.record(
             request_id="chatcmpl-" + uuid.uuid4().hex,
             api_key_id=api_key.get("id"),
             api_key_name=api_key.get("name", ""),
-            account_id=0,
+            account_id=int(account.get("id") or 0),
             account_name=f"{provider['id']}/{account.get('name', '')}",
             endpoint=endpoint,
             model=model,
@@ -670,7 +698,7 @@ class RouterService:
             credits_before=-1,
             credits_after=-1,
             credits_delta=0,
-            credits_estimated=0,
+            credits_estimated=estimated,
             latency_ms=latency_ms,
             ttft_ms=first_token_ms,
             completion_ms=completion_ms,
